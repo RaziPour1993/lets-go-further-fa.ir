@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ارسال پاسخ‌های JSON &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; ارسال پاسخ‌های JSON</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="02.03-api-endpoints-and-restful-routing.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="03.01-fixed-format-json.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۳.</div>
+			<h1 id="sending-json-responses">ارسال پاسخ‌های JSON</h1>
+
+<p>در این بخش از کتاب، handlerهای API را به‌روزرسانی می‌کنیم تا به جای متن ساده، پاسخ‌های JSON برگردانند.</p>
+
+<p>JSON، مخفف <em>JavaScript Object Notation</em>، یک قالب متنی قابل خواندن برای انسان است که می‌تواند برای نمایش داده‌های ساخت‌یافته استفاده شود. برای مثال، در پروژه ما یک فیلم می‌تواند با JSON زیر نمایش داده شود:</p>
+
+<figure class="code plain">
+<pre>{
+    &#34;id&#34;: 123,
+    &#34;title&#34;: &#34;Casablanca&#34;,
+    &#34;runtime&#34;: 102,
+    &#34;genres&#34;: [
+            &#34;drama&#34;,
+            &#34;romance&#34;,
+            &#34;war&#34;
+    ],
+    &#34;version&#34;: 1
+}</pre>
+</figure>
+
+<p>برای یک مرور <em>خیلی</em> سریع بر syntax مربوط به JSON...</p>
+
+<ul>
+<li>آکولادهای <code>{}</code> یک <em>JSON object</em> را تعریف می‌کنند که از جفت‌های key-value جداشده با کاما ساخته شده است.</li>
+<li>کلیدها باید string باشند و مقدارها می‌توانند string، number، boolean، JSON objectهای دیگر یا یک <em>array</em> از هرکدام از این موارد باشند که داخل <code>[]</code> قرار می‌گیرد.</li>
+<li>stringها باید داخل double quote یعنی <code>&quot;</code> قرار بگیرند، نه single quote یعنی <code>'</code>، و مقدارهای boolean یا <code>true</code> هستند یا <code>false</code>.</li>
+<li>خارج از string، کاراکترهای whitespace در JSON <em>هیچ</em> معنای خاصی ندارند؛ بنابراین کاملا معتبر است که همان فیلم را با JSON زیر هم نمایش دهیم:</li>
+</ul>
+
+<figure class="code plain">
+<pre>{&#34;id&#34;:123,&#34;title&#34;:&#34;Casablanca&#34;,&#34;runtime&#34;:102,&#34;genres&#34;:[&#34;drama&#34;,&#34;romance&#34;,&#34;war&#34;],&#34;version&#34;:1}</pre>
+</figure>
+
+<p>اگر تا حالا اصلا از JSON استفاده نکرده‌اید، <a href="https://towardsdatascience.com/an-introduction-to-json-c9acb464f43e">این راهنمای مقدماتی</a> یک معرفی جامع ارائه می‌کند و پیشنهاد می‌کنم قبل از ادامه آن را بخوانید.</p>
+
+<p>در این بخش از کتاب یاد می‌گیرید:</p>
+
+<ul>
+<li><p>چطور از REST API خود پاسخ‌های JSON ارسال کنید، از جمله پاسخ‌های خطا.</p></li>
+
+<li><p>چطور typeهای native در Go را با استفاده از پکیج <a href="https://golang.org/pkg/encoding/json/"><code>encoding/json</code></a> به JSON encode کنید.</p></li>
+
+<li><p>تکنیک‌های مختلف برای سفارشی‌سازی نحوه encode شدن typeهای Go به JSON؛ ابتدا با استفاده از struct tagها، و سپس با بهره گرفتن از interface مربوط به <a href="https://golang.org/pkg/encoding/json/#Marshaler"><code>json.Marshaler</code></a>.</p></li>
+
+<li><p>چطور یک helper قابل استفاده مجدد برای ارسال پاسخ‌های JSON بسازید که مطمئن شود همه پاسخ‌های API شما ساختاری منطقی و یکدست دارند.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="02.03-api-endpoints-and-restful-routing.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="03.01-fixed-format-json.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "02.03-api-endpoints-and-restful-routing.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "03.01-fixed-format-json.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>کدگذاری structها &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="03.00-sending-json-responses.html">ارسال پاسخ‌های JSON</a> &rsaquo; کدگذاری structها</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="03.02-json-encoding.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="03.04-formatting-and-enveloping-responses.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۳.۳.</div>
+			<h2 id="encoding-structs">کدگذاری structها</h2>
+
+<p>در این فصل دوباره سراغ متد <code>showMovieHandler</code> که قبلا ساختیم می‌رویم و آن را به‌روزرسانی می‌کنیم تا یک پاسخ JSON برگرداند که نماینده یک فیلم در سیستم ماست. چیزی شبیه این:</p>
+
+<figure class="code plain">
+<pre>{
+    &#34;id&#34;: 123,
+    &#34;title&#34;: &#34;Casablanca&#34;,
+    &#34;runtime&#34;: 102,
+    &#34;genres&#34;: [
+        &#34;drama&#34;,
+        &#34;romance&#34;,
+        &#34;war&#34;
+    ],
+    &#34;version&#34;: 1
+}</pre>
+</figure>
+
+<p>این بار به جای encode کردن یک map برای ساخت این JSON object، کاری که در فصل قبل انجام دادیم، یک struct سفارشی به نام <code>Movie</code> را encode می‌کنیم.</p>
+
+<p>پس اول از همه باید با تعریف یک struct سفارشی به نام <code>Movie</code> شروع کنیم. این کار را داخل یک پکیج جدید به نام <code>internal/data</code> انجام می‌دهیم؛ پکیجی که بعدا بزرگ‌تر می‌شود و <em>همه</em> typeهای داده سفارشی پروژه ما را همراه با منطق تعامل با database در خودش نگه می‌دارد.</p>
+
+<p>اگر همراه کتاب جلو می‌روید، یک directory جدید به نام <code>internal/data</code> بسازید که یک فایل <code>movies.go</code> داخلش داشته باشد:</p>
+
+<figure class="code bash">
+<pre>$ mkdir internal/data
+$ touch internal/data/movies.go</pre>
+</figure>
+
+<p>و در این فایل جدید، struct سفارشی <code>Movie</code> را به این شکل تعریف می‌کنیم:</p>
+
+<figure class="code go">
+<figcaption>File: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;time&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">type</span> <span class="nx">Movie</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">ID</span>        <span class="kt">int64</span>     <span class="c1">// Unique integer ID for the movie
+</span><span class="c1"></span>    <span class="nx">CreatedAt</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Time</span> <span class="c1">// Timestamp for when the movie is added to our database
+</span><span class="c1"></span>    <span class="nx">Title</span>     <span class="kt">string</span>    <span class="c1">// Movie title
+</span><span class="c1"></span>    <span class="nx">Year</span>      <span class="kt">int32</span>     <span class="c1">// Movie release year
+</span><span class="c1"></span>    <span class="nx">Runtime</span>   <span class="kt">int32</span>     <span class="c1">// Movie runtime (in minutes)
+</span><span class="c1"></span>    <span class="nx">Genres</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span>  <span class="c1">// Slice of genres for the movie (romance, comedy, etc.)
+</span><span class="c1"></span>    <span class="nx">Version</span>   <span class="kt">int32</span>     <span class="c1">// The version number starts at 1 and will be incremented each 
+</span><span class="c1"></span>                        <span class="c1">// time the movie information is updated
+</span><span class="c1"></span><span class="p">}</span></pre>
+</figure>
+
+<aside class="important"><p>
+<strong>مهم:</strong> اینجا باید تاکید کنیم که همه fieldهای struct مربوط به <code>Movie</code> exported هستند، یعنی با حرف بزرگ شروع می‌شوند. این برای دیده شدن آن‌ها توسط پکیج <code>encoding/json</code> در Go لازم است. هر fieldای که exported <em>نباشد</em>، هنگام encode کردن struct به JSON در خروجی قرار نمی‌گیرد.
+</p></aside>
+
+<p>حالا که این کار انجام شد، <code>showMovieHandler</code> را به‌روزرسانی می‌کنیم تا یک instance از struct مربوط به <code>Movie</code> با مقداری داده ساختگی بسازد و بعد با استفاده از helper مربوط به <code>writeJSON()</code> آن را به عنوان پاسخ JSON ارسال کند.</p>
+
+<p>در عمل کار نسبتا ساده است:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+    <span class="s">&#34;time&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span><span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">showMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">id</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readIDParam</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">http</span><span class="p">.</span><span class="nf">NotFound</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Create a new instance of the Movie struct, containing the ID we extracted from 
+</span><span class="c1"></span>    <span class="c1">// the URL and some dummy data. Also notice that we deliberately haven&#39;t set a
+</span><span class="c1"></span>    <span class="c1">// value for the Year field.
+</span><span class="c1"></span>    <span class="nx">movie</span> <span class="o">:=</span> <span class="nx">data</span><span class="p">.</span><span class="nx">Movie</span><span class="p">{</span>
+        <span class="nx">ID</span><span class="p">:</span>        <span class="nx">id</span><span class="p">,</span>
+        <span class="nx">CreatedAt</span><span class="p">:</span> <span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">(</span><span class="p">)</span><span class="p">,</span>
+        <span class="nx">Title</span><span class="p">:</span>     <span class="s">&#34;Casablanca&#34;</span><span class="p">,</span>
+        <span class="nx">Runtime</span><span class="p">:</span>   <span class="mi">102</span><span class="p">,</span>
+        <span class="nx">Genres</span><span class="p">:</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="s">&#34;drama&#34;</span><span class="p">,</span> <span class="s">&#34;romance&#34;</span><span class="p">,</span> <span class="s">&#34;war&#34;</span><span class="p">}</span><span class="p">,</span>
+        <span class="nx">Version</span><span class="p">:</span>   <span class="mi">1</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Encode the struct to JSON and send it as the HTTP response.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusOK</span><span class="p">,</span> <span class="nx">movie</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="nx">http</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;The server encountered a problem and could not process your request&#34;</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusInternalServerError</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>خب، بیایید امتحانش کنیم!</p>
+
+<p>API را دوباره راه‌اندازی کنید و بعد در مرورگر به <a href="http://localhost:4000/v1/movies/123"><code>localhost:4000/v1/movies/123</code> </a> بروید. باید یک پاسخ JSON شبیه این ببینید:</p>
+
+<figure class="img">
+<img src="assets/img/03.03-01.png" alt="03.03-01.png" />
+</figure>
+
+<p>چند نکته جالب در این پاسخ وجود دارد که باید به آن‌ها اشاره کنیم:</p>
+
+<ul>
+<li><p>struct مربوط به <code>Movie</code> به یک JSON object واحد encode شده و نام fieldها و مقدارهایشان به صورت جفت‌های key-value آمده‌اند.</p></li>
+
+<li><p>به صورت پیش‌فرض، keyهای داخل JSON object برابر با نام fieldها در struct هستند؛ مثل <code>ID</code>، <code>CreatedAt</code>، <code>Title</code> و موارد مشابه. کمی بعد درباره سفارشی‌سازی آن‌ها صحبت می‌کنیم.</p></li>
+
+<li><p>اگر برای یک field از struct مقدار صریحی تنظیم نشده باشد، encoding مربوط به <em>zero value</em> آن field در خروجی JSON ظاهر می‌شود. نمونه‌اش را در پاسخ بالا می‌بینیم؛ در کد Go برای field مربوط به <code>Year</code> مقداری تنظیم نکردیم، اما همچنان در خروجی JSON با مقدار <code>0</code> ظاهر شده است.</p></li>
+</ul>
+
+<h3 id="changing-keys-in-the-json-object">تغییر keyها در JSON object</h3>
+
+<p>یکی از چیزهای خوب درباره encode کردن structها در Go این است که می‌توانید با annotate کردن fieldها با <a href="https://github.com/golang/go/wiki/Well-known-struct-tags">struct tagها</a>، JSON را سفارشی کنید.</p>
+
+<p>احتمالا رایج‌ترین استفاده از struct tagها تغییر نام keyهایی است که در JSON object ظاهر می‌شوند. این زمانی مفید است که نام fieldهای struct شما برای پاسخ‌های public-facing مناسب نیست، یا می‌خواهید در خروجی JSON از یک <a href="https://medium.com/better-programming/string-case-styles-camel-pascal-snake-and-kebab-case-981407998841">سبک casing</a> متفاوت استفاده کنید.</p>
+
+<p>برای نشان دادن روش انجام این کار، struct مربوط به <code>Movies</code> را با struct tagها annotate می‌کنیم تا برای keyها از <code>snake_case</code> استفاده کند. به این شکل:</p>
+
+<figure class="code go">
+<figcaption>File: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Annotate the Movie struct with struct tags to control how the keys appear in the 
+</span><span class="c1"></span><span class="c1">// JSON-encoded output.
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">Movie</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">ID</span>        <span class="kt">int64</span>     <span class="s">`</span><span class="s">json:&#34;id&#34;</span><span class="s">`</span>
+    <span class="nx">CreatedAt</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Time</span> <span class="s">`</span><span class="s">json:&#34;created_at&#34;</span><span class="s">`</span>
+    <span class="nx">Title</span>     <span class="kt">string</span>    <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+    <span class="nx">Year</span>      <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+    <span class="nx">Runtime</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span>
+    <span class="nx">Genres</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span>  <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="nx">Version</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;version&#34;</span><span class="s">`</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>و اگر server را دوباره راه‌اندازی کنید و دوباره به <a href="http://localhost:4000/v1/movies/123"><code>localhost:4000/v1/movies/123</code></a> بروید، حالا باید پاسخی با keyهای <code>snake_case</code> شبیه این ببینید:</p>
+
+<figure class="img">
+<img src="assets/img/03.03-02.png" alt="03.03-02.png" />
+</figure>
+
+<h3 id="hiding-struct-fields-in-the-json-object">مخفی کردن fieldهای struct در JSON object</h3>
+
+<p>همچنین می‌توان با استفاده از directiveهای struct tag یعنی <code>omitzero</code> و <code>-</code>، قابل مشاهده بودن fieldهای جداگانه struct را در JSON کنترل کرد.</p>
+
+<p>directive مربوط به <code>-</code> یا hyphen زمانی استفاده می‌شود که <em>هرگز</em> نمی‌خواهید یک field مشخص از struct در خروجی JSON ظاهر شود. این برای fieldهایی مفید است که شامل اطلاعات داخلی سیستم هستند و به کاربران شما مربوط نمی‌شوند، یا شامل اطلاعات حساسی هستند که نمی‌خواهید افشا کنید، مثل hash یک password.</p>
+
+<p>در مقابل، directive مربوط به <code>omitzero</code> یک field را در خروجی JSON مخفی می‌کند <em>اگر و فقط اگر</em> مقدار آن برابر با zero value type همان field باشد. برای یادآوری، zero valueهای typeهای Go که می‌توانند به JSON encode شوند این‌ها هستند:</p>
+
+<table>
+<thead>
+<tr>
+<th>Zero value</th>
+<th>نوع Go</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td><code>false</code></td>
+<td><code>bool</code></td>
+</tr>
+
+<tr>
+<td><code>&quot;&quot;</code></td>
+<td><code>string</code></td>
+</tr>
+
+<tr>
+<td><code>0</code></td>
+<td><code>int*</code>, <code>uint*</code>, <code>float*</code>, <code>rune</code></td>
+</tr>
+
+<tr>
+<td><code>nil</code></td>
+<td>slices, maps, pointers</td>
+</tr>
+
+<tr>
+<td>هر field داخل struct مقدار zero value خودش را دارد</td>
+<td>structs</td>
+</tr>
+
+<tr>
+<td>هر element داخل array روی zero value مربوط به type خودش تنظیم می‌شود</td>
+<td>arrays</td>
+</tr>
+</tbody>
+</table>
+<p>برای نشان دادن نحوه استفاده از این directiveها، چند تغییر دیگر در struct مربوط به <code>Movie</code> ایجاد می‌کنیم. field مربوط به <code>CreatedAt</code> به کاربران نهایی ما ربطی ندارد، پس با استفاده از directive مربوط به <code>-</code> همیشه آن را در خروجی مخفی می‌کنیم. همچنین از directive مربوط به <code>omitzero</code> استفاده می‌کنیم تا fieldهای <code>Year</code>، <code>Runtime</code> و <code>Genres</code> را در خروجی مخفی کنیم، <em>اگر و فقط اگر</em> مقدارشان برابر با zero value مربوط به type خودشان باشد.</p>
+
+<p>حالا struct tagها را به این شکل به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>File: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="kd">type</span> <span class="nx">Movie</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">ID</span>        <span class="kt">int64</span>     <span class="s">`</span><span class="s">json:&#34;id&#34;</span><span class="s">`</span>
+    <span class="nx">CreatedAt</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Time</span> <span class="s">`</span><span class="s">json:&#34;-&#34;</span><span class="s">`</span> <span class="c1">// Use the - directive
+</span><span class="c1"></span>    <span class="nx">Title</span>     <span class="kt">string</span>    <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+    <span class="nx">Year</span>      <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;year,omitzero&#34;</span><span class="s">`</span>    <span class="c1">// Add the omitzero directive
+</span><span class="c1"></span>    <span class="nx">Runtime</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;runtime,omitzero&#34;</span><span class="s">`</span> <span class="c1">// Add the omitzero directive
+</span><span class="c1"></span>    <span class="nx">Genres</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span>  <span class="s">`</span><span class="s">json:&#34;genres,omitzero&#34;</span><span class="s">`</span>  <span class="c1">// Add the omitzero directive
+</span><span class="c1"></span>    <span class="nx">Version</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;version&#34;</span><span class="s">`</span>
+<span class="p">}</span></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر می‌خواهید از <code>omitzero</code> استفاده کنید و نام key را تغییر <em>ندهید</em>، می‌توانید بخش نام را در struct tag خالی بگذارید؛ به این شکل: <code>json:&quot;,omitzero&quot;</code>. توجه کنید که comma ابتدایی همچنان لازم است.
+</p></aside>
+
+<p>حالا وقتی application را دوباره راه‌اندازی کنید و مرورگر را refresh کنید، باید پاسخی ببینید که دقیقا شبیه این است:</p>
+
+<figure class="img">
+<img src="assets/img/03.03-03.png" alt="03.03-03.png" />
+</figure>
+
+<p>اینجا می‌بینیم که field مربوط به <code>CreatedAt</code> دیگر اصلا در JSON ظاهر نمی‌شود و field مربوط به <code>Year</code> هم که مقدار <code>0</code> داشت، به لطف directive مربوط به <code>omitzero</code> ظاهر نشده است. fieldهای دیگری که روی آن‌ها از <code>omitzero</code> استفاده کردیم، یعنی <code>Runtime</code> و <code>Genres</code>، تحت تاثیر قرار نگرفته‌اند.</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> می‌توانید با unexported کردن یک field از struct هم جلوی ظاهر شدن آن را در خروجی JSON بگیرید. اما استفاده از struct tag مربوط به <code>json:&quot;-&quot;</code> معمولا انتخاب بهتری است: این کار هم به Go و هم به خواننده‌های آینده کد شما به شکل صریح نشان می‌دهد که نمی‌خواهید آن field در JSON قرار بگیرد، و اگر کسی در آینده بدون توجه به پیامدها آن field را exported کند، به جلوگیری از مشکل کمک می‌کند.
+</p></aside>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="the-omitempty-directive">directive مربوط به omitempty</h4>
+
+<p>directive مربوط به <code>omitzero</code> که در این فصل استفاده کردیم، در Go 1.24 اضافه شده و از نظر رفتار، همپوشانی قابل توجهی با directive قدیمی‌تری به نام <code>omitempty</code> دارد.</p>
+
+<p>directive مربوط به <code>omitzero</code> درباره کاری که انجام می‌دهد بسیار روشن و سازگار است: وقتی مقدار دقیقا با zero value آن type برابر باشد، آن چیز را از JSON حذف می‌کند. و این <em>تنها</em> کاری است که انجام می‌دهد.</p>
+
+<p>در مقابل، directive مربوط به <code>omitempty</code> شبیه <code>omitzero</code> است، اما رفتارش کمتر سازگار است. این directive از چند جهت مهم با <code>omitzero</code> فرق دارد:</p>
+
+<ul>
+<li><code>omitempty</code> structها را حذف نمی‌کند، حتی اگر همه fieldهای struct مقدار zero value داشته باشند.</li>
+<li><code>omitempty</code> typeهای <code>time.Time</code> را حذف نمی‌کند، حتی اگر zero value داشته باشند. دلیلش این است که type مربوط به <code>time.Time</code> پشت صحنه در واقع یک struct است، پس این مورد در اصل حالت خاصی از نکته قبلی است.</li>
+<li><code>omitempty</code> arrayها را حذف نمی‌کند، حتی اگر zero value داشته باشند.</li>
+<li><code>omitempty</code> sliceها و mapهای <em>خالی</em> را حذف می‌کند، یعنی sliceها و mapهایی که initialize شده‌اند اما length آن‌ها صفر است؛ و <em>همچنین</em> sliceها و mapهای <code>nil</code> را هم حذف می‌کند.</li>
+</ul>
+
+<p>حالا که <code>omitzero</code> وجود دارد، تنها زمانی که معمولا استفاده از directive مربوط به <code>omitempty</code> را پیشنهاد می‌کنم وقتی است که می‌خواهید sliceها یا mapهای خالی را کاملا از JSON حذف کنید، به جای اینکه به یک JSON array خالی مثل <code>[]</code> encode شوند.</p>
+
+<p>برای مثال، اگر بخواهید هر وقت field مربوط به <code>Genres</code> هیچ مقداری ندارد، یا <code>nil</code> است، آن را کاملا از JSON حذف کنید، می‌توانید از directive مربوط به <code>omitempty</code> به این شکل استفاده کنید:</p>
+
+<figure class="code go">
+<pre><span class="kd">type</span> <span class="nx">Movie</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">ID</span>        <span class="kt">int64</span>     <span class="s">`</span><span class="s">json:&#34;id&#34;</span><span class="s">`</span>
+    <span class="nx">CreatedAt</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Time</span> <span class="s">`</span><span class="s">json:&#34;-&#34;</span><span class="s">`</span> 
+    <span class="nx">Title</span>     <span class="kt">string</span>    <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+    <span class="nx">Year</span>      <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;year,omitzero&#34;</span><span class="s">`</span>    
+    <span class="nx">Runtime</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;runtime,omitzero&#34;</span><span class="s">`</span> 
+    <span class="nx">Genres</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span>  <span class="s">`</span><span class="s">json:&#34;genres,omitempty&#34;</span><span class="s">`</span> <span class="c1">// Use the omitempty directive
+</span><span class="c1"></span>    <span class="nx">Version</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;version&#34;</span><span class="s">`</span>
+<span class="p">}</span></pre>
+</figure>
+
+<h4 id="the-string-directive">directive مربوط به string</h4>
+
+<p>آخرین directive struct tag که کمتر هم استفاده می‌شود، <code>string</code> است. می‌توانید از این directive روی fieldهای جداگانه struct استفاده کنید تا داده در خروجی JSON به صورت string نمایش داده شود.</p>
+
+<p>برای مثال، اگر بخواهیم مقدار field مربوط به <code>Runtime</code> به جای number به صورت string در JSON نمایش داده شود، می‌توانیم از directive مربوط به <code>string</code> به این شکل استفاده کنیم:</p>
+
+<figure class="code go">
+<pre><span class="kd">type</span> <span class="nx">Movie</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">ID</span>        <span class="kt">int64</span>     <span class="s">`</span><span class="s">json:&#34;id&#34;</span><span class="s">`</span>
+    <span class="nx">CreatedAt</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Time</span> <span class="s">`</span><span class="s">json:&#34;-&#34;</span><span class="s">`</span>
+    <span class="nx">Title</span>     <span class="kt">string</span>    <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+    <span class="nx">Year</span>      <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;year,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">Runtime</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;runtime,omitzero,string&#34;</span><span class="s">`</span> <span class="c1">// Add the string directive
+</span><span class="c1"></span>    <span class="nx">Genres</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span>  <span class="s">`</span><span class="s">json:&#34;genres,omitzero&#34;</span><span class="s">`</span> 
+    <span class="nx">Version</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;version&#34;</span><span class="s">`</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>و خروجی JSON حاصل به این شکل خواهد بود:</p>
+
+<figure class="code plain">
+<pre>{
+  &#34;id&#34;: 123,
+  &#34;title&#34;: &#34;Casablanca&#34;,
+  &#34;runtime&#34;: &#34;102&#34;,       ← This is now a string
+  &#34;genres&#34;: [
+    &#34;drama&#34;,
+    &#34;romance&#34;,
+    &#34;war&#34;
+  ],
+  &#34;version&#34;: 1
+}</pre>
+</figure>
+
+<p>توجه کنید که directive مربوط به <code>string</code> فقط روی fieldهای struct کار می‌کند که type آن‌ها <code>int*</code>، <code>uint*</code>، <code>float*</code> یا <code>bool</code> باشد. برای هر type دیگری از fieldهای struct، اثری نخواهد داشت.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="03.02-json-encoding.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="03.04-formatting-and-enveloping-responses.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "03.02-json-encoding.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "03.04-formatting-and-enveloping-responses.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

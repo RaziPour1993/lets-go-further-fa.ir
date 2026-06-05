@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ارسال پیام‌های خطا &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="03.00-sending-json-responses.html">ارسال پاسخ‌های JSON</a> &rsaquo; ارسال پیام‌های خطا</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="03.05-advanced-json-customization.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="04.00-parsing-json-requests.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۳.۶.</div>
+			<h2 id="sending-error-messages">ارسال پیام‌های خطا</h2>
+
+<p>در این نقطه، API ما برای requestهای موفق پاسخ‌های JSON خوش‌ساخت ارسال می‌کند، اما اگر یک client درخواست بدی بفرستد، یا چیزی در application ما اشتباه پیش برود، هنوز با استفاده از functionهای <code>http.Error()</code> و <code>http.NotFound()</code> یک پیام خطای plain-text برای او ارسال می‌کنیم.</p>
+
+<p>در این فصل این مشکل را با ساخت چند helper اضافی برای مدیریت خطاها و ارسال پاسخ‌های JSON مناسب به clientها برطرف می‌کنیم.</p>
+
+<p>اگر همراه کتاب جلو می‌روید، یک فایل جدید به نام <code>cmd/api/errors.go</code> بسازید:</p>
+
+<figure class="code bash">
+<pre>$ touch cmd/api/errors.go</pre>
+</figure>
+
+<p>و بعد چند helper method مثل این‌ها اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/errors.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+<span class="p">)</span>
+
+<span class="c1">// The logError() method is a helper for logging an error message, along
+</span><span class="c1"></span><span class="c1">// with the current request method and URL as attributes in the log entry.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">logError</span><span class="p">(</span><span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span> <span class="nx">err</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="p">(</span>
+        <span class="nx">method</span> <span class="p">=</span> <span class="nx">r</span><span class="p">.</span><span class="nx">Method</span>
+        <span class="nx">uri</span>    <span class="p">=</span> <span class="nx">r</span><span class="p">.</span><span class="nx">URL</span><span class="p">.</span><span class="nf">RequestURI</span><span class="p">(</span><span class="p">)</span>
+    <span class="p">)</span>
+
+    <span class="nx">app</span><span class="p">.</span><span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;method&#34;</span><span class="p">,</span> <span class="nx">method</span><span class="p">,</span> <span class="s">&#34;uri&#34;</span><span class="p">,</span> <span class="nx">uri</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// The errorResponse() method is a helper for sending JSON-formatted error
+</span><span class="c1"></span><span class="c1">// messages to the client with a given status code. Note that we&#39;re using the any
+</span><span class="c1"></span><span class="c1">// type for the message parameter, rather than just a string type, as this gives us
+</span><span class="c1"></span><span class="c1">// more flexibility over the values that we can include in the response.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span> <span class="nx">status</span> <span class="kt">int</span><span class="p">,</span> <span class="nx">message</span> <span class="nx">any</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">env</span> <span class="o">:=</span> <span class="nx">envelope</span><span class="p">{</span><span class="s">&#34;error&#34;</span><span class="p">:</span> <span class="nx">message</span><span class="p">}</span>
+
+    <span class="c1">// Write the response using the writeJSON() helper. If this happens to return an
+</span><span class="c1"></span>    <span class="c1">// error then log it, and fall back to sending the client an empty response with a
+</span><span class="c1"></span>    <span class="c1">// 500 Internal Server Error status code.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">status</span><span class="p">,</span> <span class="nx">env</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">logError</span><span class="p">(</span><span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="nx">w</span><span class="p">.</span><span class="nf">WriteHeader</span><span class="p">(</span><span class="mi">500</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// The serverErrorResponse() method will be used when our application encounters an
+</span><span class="c1"></span><span class="c1">// unexpected problem at runtime. It logs the detailed error message, then uses the
+</span><span class="c1"></span><span class="c1">// errorResponse() helper to send a 500 Internal Server Error status code and JSON
+</span><span class="c1"></span><span class="c1">// response (containing a generic error message) to the client.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span> <span class="nx">err</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">logError</span><span class="p">(</span><span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+
+    <span class="nx">message</span> <span class="o">:=</span> <span class="s">&#34;the server encountered a problem and could not process your request&#34;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusInternalServerError</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// The notFoundResponse() method will be used to send a 404 Not Found status code and
+</span><span class="c1"></span><span class="c1">// JSON response to the client.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">message</span> <span class="o">:=</span> <span class="s">&#34;the requested resource could not be found&#34;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusNotFound</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// The methodNotAllowedResponse() method will be used to send a 405 Method Not Allowed
+</span><span class="c1"></span><span class="c1">// status code and JSON response to the client.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">methodNotAllowedResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">message</span> <span class="o">:=</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;the %s method is not supported for this resource&#34;</span><span class="p">,</span> <span class="nx">r</span><span class="p">.</span><span class="nx">Method</span><span class="p">)</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusMethodNotAllowed</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>حالا که این‌ها آماده شدند، handlerهای API را به‌روزرسانی می‌کنیم تا به جای functionهای <code>http.Error()</code> و <code>http.NotFound()</code> از این helperهای جدید استفاده کنند. به این شکل:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/healthcheck.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">healthcheckHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">env</span> <span class="o">:=</span> <span class="nx">envelope</span><span class="p">{</span>
+        <span class="s">&#34;status&#34;</span><span class="p">:</span> <span class="s">&#34;available&#34;</span><span class="p">,</span>
+        <span class="s">&#34;system_info&#34;</span><span class="p">:</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+            <span class="s">&#34;environment&#34;</span><span class="p">:</span> <span class="nx">app</span><span class="p">.</span><span class="nx">config</span><span class="p">.</span><span class="nx">env</span><span class="p">,</span>
+            <span class="s">&#34;version&#34;</span><span class="p">:</span>     <span class="nx">version</span><span class="p">,</span>
+        <span class="p">}</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusOK</span><span class="p">,</span> <span class="nx">env</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="c1">// Use the new serverErrorResponse() helper.
+</span><span class="c1"></span>        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">showMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">id</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readIDParam</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="c1">// Use the new notFoundResponse() helper.
+</span><span class="c1"></span>        <span class="nx">app</span><span class="p">.</span><span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">movie</span> <span class="o">:=</span> <span class="nx">data</span><span class="p">.</span><span class="nx">Movie</span><span class="p">{</span>
+        <span class="nx">ID</span><span class="p">:</span>        <span class="nx">id</span><span class="p">,</span>
+        <span class="nx">CreatedAt</span><span class="p">:</span> <span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">(</span><span class="p">)</span><span class="p">,</span>
+        <span class="nx">Title</span><span class="p">:</span>     <span class="s">&#34;Casablanca&#34;</span><span class="p">,</span>
+        <span class="nx">Runtime</span><span class="p">:</span>   <span class="mi">102</span><span class="p">,</span>
+        <span class="nx">Genres</span><span class="p">:</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="s">&#34;drama&#34;</span><span class="p">,</span> <span class="s">&#34;romance&#34;</span><span class="p">,</span> <span class="s">&#34;war&#34;</span><span class="p">}</span><span class="p">,</span>
+        <span class="nx">Version</span><span class="p">:</span>   <span class="mi">1</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusOK</span><span class="p">,</span> <span class="nx">envelope</span><span class="p">{</span><span class="s">&#34;movie&#34;</span><span class="p">:</span> <span class="nx">movie</span><span class="p">}</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="c1">// Use the new serverErrorResponse() helper.
+</span><span class="c1"></span>        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<h3 id="routing-errors">خطاهای routing</h3>
+
+<p>هر پیام خطایی که handlerهای API خودمان ارسال کنند، حالا یک پاسخ JSON خوش‌ساخت خواهد بود. عالی است!</p>
+
+<p>اما پیام‌های خطایی که <code>httprouter</code> وقتی route منطبق پیدا نمی‌کند به صورت خودکار می‌فرستد چه؟ به صورت پیش‌فرض، این‌ها همچنان همان پاسخ‌های plain-text و غیر JSON هستند که قبلا در کتاب دیدیم.</p>
+
+<p>خوشبختانه <code>httprouter</code> اجازه می‌دهد error handlerهای سفارشی خودمان را تنظیم کنیم. این handlerهای سفارشی باید interface مربوط به <code>http.Handler</code> را satisfy کنند، و این برای ما خبر خوبی است چون یعنی می‌توانیم helperهای <code>notFoundResponse()</code> و <code>methodNotAllowedResponse()</code> را که همین الان ساختیم به‌راحتی reuse کنیم.</p>
+
+<p>فایل <code>cmd/api/routes.go</code> را باز کنید و instance مربوط به <code>httprouter</code> را به این شکل configure کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Convert the notFoundResponse() helper to a http.Handler using the 
+</span><span class="c1"></span>    <span class="c1">// http.HandlerFunc() adapter, and then set it as the custom error handler for 404
+</span><span class="c1"></span>    <span class="c1">// Not Found responses.
+</span><span class="c1"></span>    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+
+    <span class="c1">// Likewise, convert the methodNotAllowedResponse() helper to a http.Handler and set
+</span><span class="c1"></span>    <span class="c1">// it as the custom error handler for 405 Method Not Allowed responses.
+</span><span class="c1"></span>    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nx">router</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>بیایید این تغییرات را امتحان کنیم. application را دوباره راه‌اندازی کنید، بعد چند request برای endpointهایی که وجود ندارند یا از HTTP method پشتیبانی‌نشده استفاده می‌کنند بفرستید. حالا باید چند پاسخ خطای JSON مرتب شبیه این‌ها بگیرید:</p>
+
+<figure class="code bash">
+<pre>$ curl -i localhost:4000/foo
+<samp>HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Tue, 06 Apr 2021 15:13:42 GMT
+Content-Length: 58
+
+{
+    &#34;error&#34;: &#34;the requested resource could not be found&#34;
+}</samp>
+
+$ curl -i localhost:4000/v1/movies/abc
+<samp>HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Tue, 06 Apr 2021 15:14:01 GMT
+Content-Length: 58
+
+{
+    &#34;error&#34;: &#34;the requested resource could not be found&#34;
+}</samp>
+
+$ curl -i -X PUT localhost:4000/v1/healthcheck
+<samp>HTTP/1.1 405 Method Not Allowed
+Allow: GET, OPTIONS
+Content-Type: application/json
+Date: Tue, 06 Apr 2021 15:14:21 GMT
+Content-Length: 66
+
+{
+    &#34;error&#34;: &#34;the PUT method is not supported for this resource&#34;
+}</samp></pre>
+</figure>
+
+<p>در مثال آخر توجه کنید که <code>httprouter</code> هنوز به صورت خودکار header درست <code>Allow</code> را برای ما تنظیم می‌کند، با اینکه حالا برای پاسخ از error handler سفارشی ما استفاده می‌کند.</p>
+
+<h3 id="panic-recovery">بازیابی از panic</h3>
+
+<p>در پایان، بیایید ببینیم اگر در کد handler ما یک runtime panic رخ بدهد چه اتفاقی می‌افتد.</p>
+
+<ol>
+<li>اجرای عادی کد در handler بلافاصله متوقف می‌شود.</li>
+<li>هر function از نوع deferred برای goroutine فعلی، به ترتیب معکوس، یعنی last-in, first-out، اجرا می‌شود.</li>
+<li>بعد panic توسط <code>http.Server</code> در Go recover می‌شود و connection زیربنایی HTTP بسته خواهد شد.</li>
+<li>یک پیام خطا و stack trace در <code>http.Server.ErrorLog</code> خروجی داده می‌شود.</li>
+<li>هیچ HTTP request دیگری تحت تاثیر panic قرار نمی‌گیرد.</li>
+</ol>
+
+<p>این رفتار <em>قابل قبول</em> است، اما برای client بهتر است اگر بتوانیم یک پاسخ <code>500 Internal Server Error</code> هم بفرستیم تا توضیح بدهیم چیزی اشتباه پیش رفته، نه اینکه فقط connection مربوط به HTTP را بدون هیچ توضیحی ببندیم.</p>
+
+<p>در <em>Let&rsquo;s Go</em> جزئیات انجام این کار را با ساختن middleware برای recover کردن panic توسط خودمان مرور کردیم، و منطقی است اینجا هم دوباره همان کار را انجام دهیم.</p>
+
+<p>اگر همراه کتاب جلو می‌روید، یک فایل <code>cmd/api/middleware.go</code> بسازید:</p>
+
+<figure class="code bash">
+<pre>$ touch cmd/api/middleware.go</pre>
+</figure>
+
+<p>و داخل آن فایل یک middleware جدید به نام <code>recoverPanic()</code> اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/middleware.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// Create a deferred function (which will always be run in the event
+</span><span class="c1"></span>        <span class="c1">// of a panic).
+</span><span class="c1"></span>        <span class="k">defer</span> <span class="kd">func</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+            <span class="c1">// Use the built-in recover() function to check if a panic occurred.
+</span><span class="c1"></span>            <span class="c1">// If a panic did happen, recover() will return the panic value. If
+</span><span class="c1"></span>            <span class="c1">// a panic didn&#39;t happen, it will return nil.
+</span><span class="c1"></span>            <span class="nx">pv</span> <span class="o">:=</span> <span class="nb">recover</span><span class="p">(</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nx">pv</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+                <span class="c1">// If there was a panic, set a &#34;Connection: close&#34; header on the 
+</span><span class="c1"></span>                <span class="c1">// response. This acts as a trigger to make Go&#39;s HTTP server 
+</span><span class="c1"></span>                <span class="c1">// automatically close the current connection after the response has been 
+</span><span class="c1"></span>                <span class="c1">// sent.
+</span><span class="c1"></span>                <span class="nx">w</span><span class="p">.</span><span class="nf">Header</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="s">&#34;Connection&#34;</span><span class="p">,</span> <span class="s">&#34;close&#34;</span><span class="p">)</span>
+                <span class="c1">// The value returned by recover() has the type any, so we use
+</span><span class="c1"></span>                <span class="c1">// fmt.Errorf() with the %v verb to coerce it into an error and  
+</span><span class="c1"></span>                <span class="c1">// call our serverErrorResponse() helper. In turn, this will log the 
+</span><span class="c1"></span>                <span class="c1">// error at the ERROR level and send the client a 500 Internal 
+</span><span class="c1"></span>                <span class="c1">// Server Error response.
+</span><span class="c1"></span>                <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;%v&#34;</span><span class="p">,</span> <span class="nx">pv</span><span class="p">)</span><span class="p">)</span>
+            <span class="p">}</span>
+        <span class="p">}</span><span class="p">(</span><span class="p">)</span>
+
+        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>وقتی این کار انجام شد، باید فایل <code>cmd/api/routes.go</code> را به‌روزرسانی کنیم تا middleware مربوط به <code>recoverPanic()</code> دور router ما wrap شود. این کار مطمئن می‌کند که middleware برای همه endpointهای API اجرا می‌شود.</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span>
+
+    <span class="c1">// Wrap the router with the panic recovery middleware.
+</span><span class="c1"></span>    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">router</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>حالا که این آماده است، اگر در یکی از handlerهای API ما panic رخ بدهد، middleware مربوط به <code>recoverPanic()</code> آن را recover می‌کند و helper معمولی <code>app.serverErrorResponse()</code> را صدا می‌زند. آن helper هم خطا را با structured logger ما log می‌کند و یک پاسخ مرتب <code>500 Internal Server Error</code> همراه با JSON body برای client می‌فرستد.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="system-generated-error-responses">پاسخ‌های خطای تولیدشده توسط سیستم</h4>
+
+<p>حالا که درباره خطاها صحبت می‌کنیم، می‌خواهم اشاره کنم که در بعضی سناریوها، <code>http.Server</code> در Go ممکن است همچنان به صورت خودکار پاسخ‌های HTTP از نوع plain-text تولید و ارسال کند. این سناریوها شامل این موارد هستند:</p>
+
+<ul>
+<li>HTTP request یک نسخه پشتیبانی‌نشده از پروتکل HTTP را مشخص کند.</li>
+<li>HTTP request فاقد header مربوط به <code>Host</code> باشد، یا header مربوط به <code>Host</code> نامعتبر یا چندتایی داشته باشد.</li>
+<li>HTTP request یک header خالی <code>Content-Length</code> داشته باشد.</li>
+<li>HTTP request یک header پشتیبانی‌نشده <code>Transfer-Encoding</code> داشته باشد.</li>
+<li>اندازه headerهای HTTP request از تنظیم <a href="https://golang.org/pkg/net/http/#Server"><code>MaxHeaderBytes</code></a> server بیشتر شود.</li>
+<li>client یک HTTP request به یک HTTPS server بفرستد.</li>
+</ul>
+
+<p>برای مثال، اگر تلاش کنیم requestای با مقدار نامعتبر برای header مربوط به <code>Host</code> بفرستیم، پاسخی شبیه این می‌گیریم:</p>
+
+<figure class="code bash">
+<pre>$ curl -i -H &#34;Host: こんにちは&#34;  http://localhost:4000/v1/healthcheck
+<samp>HTTP/1.1 400 Bad Request: malformed Host header
+Content-Type: text/plain; charset=utf-8
+Connection: close
+
+400 Bad Request: malformed Host header</samp></pre>
+</figure>
+
+<p>متاسفانه این پاسخ‌ها در standard library خود Go hard-code شده‌اند و کاری نمی‌توانیم انجام دهیم تا آن‌ها را سفارشی کنیم و به جای plain-text از JSON استفاده کنند.</p>
+
+<p>اما با اینکه باید از این موضوع آگاه باشید، لزوما چیزی نیست که بابتش نگران شوید. در محیط production، بعید است clientهای خوش‌رفتار و غیر مخرب این پاسخ‌ها را trigger کنند، و اگر گاهی برای clientهای بد به جای JSON یک پاسخ plain-text ارسال شد، نباید بیش از حد نگران باشیم.</p>
+
+<h4 id="panic-recovery-in-other-goroutines">بازیابی panic در goroutineهای دیگر</h4>
+
+<p>خیلی مهم است بدانید middleware ما فقط panicهایی را recover می‌کند که در <em>همان goroutineای رخ داده‌اند که middleware مربوط به <code>recoverPanic()</code> را اجرا کرده است</em>.</p>
+
+<p>برای مثال، اگر handlerای دارید که یک goroutine دیگر راه‌اندازی می‌کند، مثلا برای انجام پردازش در background، هر panicای که در goroutine پس‌زمینه رخ بدهد recover نخواهد شد؛ نه توسط middleware مربوط به <code>recoverPanic()</code>&hellip; و نه توسط panic recovery داخلی <code>http.Server</code>. این panicها باعث exit شدن application و پایین آمدن server می‌شوند.</p>
+
+<p>پس اگر از داخل handlerها goroutineهای اضافی راه‌اندازی می‌کنید و هر احتمالی برای panic وجود دارد، <em>باید</em> مطمئن شوید که panicها را از داخل همان goroutineها هم recover می‌کنید.</p>
+
+<p>بعدتر در کتاب با جزئیات بیشتری به این موضوع نگاه می‌کنیم و وقتی از یک background goroutine برای ارسال ایمیل خوشامدگویی به کاربران API استفاده کنیم، نشان می‌دهیم چطور باید با آن برخورد کرد.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="03.05-advanced-json-customization.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="04.00-parsing-json-requests.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "03.05-advanced-json-customization.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "04.00-parsing-json-requests.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

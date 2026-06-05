@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>JSON با فرمت ثابت &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="03.00-sending-json-responses.html">ارسال پاسخ‌های JSON</a> &rsaquo; JSON با فرمت ثابت</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="03.00-sending-json-responses.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="03.02-json-encoding.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۳.۱.</div>
+			<h2 id="fixed-format-json">JSON با فرمت ثابت</h2>
+
+<p>بیایید با به‌روزرسانی <code>healthcheckHandler</code> شروع کنیم تا یک پاسخ JSON معتبر و خوش‌ساخت شبیه این ارسال کند:</p>
+
+<figure class="code plain">
+<pre>{&#34;status&#34;: &#34;available&#34;, &#34;environment&#34;: &#34;development&#34;, &#34;version&#34;: &#34;1.0.0&#34;}</pre>
+</figure>
+
+<p>در این مرحله، چیزی که می‌خواهم روی آن تاکید کنم این است که JSON <em>فقط متن است</em>. درست است که کاراکترهای کنترلی خاصی دارد که به متن ساختار و معنا می‌دهند، اما در اصل فقط متن است.</p>
+
+<p>یعنی می‌توانید یک پاسخ JSON را از handlerهای Go خود درست مثل هر پاسخ متنی دیگری بنویسید: با استفاده از <code>w.Write()</code>، <code>io.WriteString()</code> یا یکی از functionهای <code>fmt.Fprint</code>.</p>
+
+<p>در واقع، تنها کار ویژه‌ای که باید انجام دهیم این است که header مربوط به <code>Content-Type: application/json</code> را روی پاسخ تنظیم کنیم تا کلاینت بداند JSON دریافت می‌کند و بتواند آن را مطابق همین تفسیر کند.</p>
+
+<p>بیایید دقیقا همین کار را انجام دهیم.</p>
+
+<p>فایل <code>cmd/api/healthcheck.go</code> را باز کنید و <code>healthcheckHandler</code> را به شکل زیر به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/healthcheck.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">healthcheckHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Create a fixed-format JSON response from a string. Notice how we&#39;re using a raw
+</span><span class="c1"></span>    <span class="c1">// string literal (enclosed with backticks) so that we can include double quote 
+</span><span class="c1"></span>    <span class="c1">// characters in the JSON without needing to escape them? We also use the %q verb to 
+</span><span class="c1"></span>    <span class="c1">// wrap the interpolated values in double quotes.
+</span><span class="c1"></span>    <span class="nx">js</span> <span class="o">:=</span> <span class="s">`</span><span class="s">{</span><span class="s">&#34;status&#34;: &#34;available&#34;, &#34;environment&#34;: %q, &#34;version&#34;: %q}</span><span class="s">`</span>
+    <span class="nx">js</span> <span class="p">=</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="nx">js</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">config</span><span class="p">.</span><span class="nx">env</span><span class="p">,</span> <span class="nx">version</span><span class="p">)</span>
+
+    <span class="c1">// Set the &#34;Content-Type: application/json&#34; header on the response. If you forget to do
+</span><span class="c1"></span>    <span class="c1">// this, Go will default to sending a &#34;Content-Type: text/plain; charset=utf-8&#34;
+</span><span class="c1"></span>    <span class="c1">// header instead.
+</span><span class="c1"></span>    <span class="nx">w</span><span class="p">.</span><span class="nf">Header</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="s">&#34;Content-Type&#34;</span><span class="p">,</span> <span class="s">&#34;application/json&#34;</span><span class="p">)</span>
+
+    <span class="c1">// Write the JSON as the HTTP response body.
+</span><span class="c1"></span>    <span class="nx">w</span><span class="p">.</span><span class="nf">Write</span><span class="p">(</span><span class="p">[</span><span class="p">]</span><span class="nb">byte</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>بعد از اعمال این تغییرات، API را دوباره راه‌اندازی کنید، یک ترمینال دوم باز کنید و با <code>curl</code> یک درخواست به endpoint مربوط به <code>GET /v1/healthcheck</code> بفرستید. حالا باید پاسخی شبیه این دریافت کنید:</p>
+
+<figure class="code bash">
+<pre>$ curl -i localhost:4000/v1/healthcheck
+<samp>HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 06 Apr 2021 08:38:12 GMT
+Content-Length: 73
+
+{&#34;status&#34;: &#34;available&#34;, &#34;environment&#34;: &#34;development&#34;, &#34;version&#34;: &#34;1.0.0&#34;}</samp></pre>
+</figure>
+
+<p>همچنین شاید بخواهید آدرس <a href="http://localhost:4000/v1/healthcheck"><code>localhost:4000/v1/healthcheck</code></a> را در مرورگر خود باز کنید.</p>
+
+<p>اگر یکی از نسخه‌های جدیدتر Firefox را اجرا می‌کنید، می‌بینید که به خاطر header مربوط به <code>Content-Type</code> تشخیص می‌دهد پاسخ شامل JSON است و آن را با JSON viewer داخلی نمایش می‌دهد. مثل این:</p>
+
+<figure class="img">
+<img src="assets/img/03.01-01.png" alt="03.01-01.png" />
+</figure>
+
+<p>اگر روی tab مربوط به <strong>Raw Data</strong> کلیک کنید، باید پاسخ JSON اصلی و formatنشده را ببینید:</p>
+
+<figure class="img">
+<img src="assets/img/03.01-02.png" alt="03.01-02.png" />
+</figure>
+
+<p>یا حتی می‌توانید گزینه <strong>Pretty Print</strong> را انتخاب کنید تا whitespace اضافه شود، مثل این:</p>
+
+<figure class="img">
+<img src="assets/img/03.01-03.png" alt="03.01-03.png" />
+</figure>
+
+<p>البته استفاده از یک string با فرمت ثابت، مثل کاری که در این فصل انجام می‌دهیم، رویکردی بسیار ساده و ابتدایی برای تولید پاسخ JSON است. اما خوب است به یاد داشته باشیم که این روش <em>یک گزینه معتبر</em> است. این روش می‌تواند برای endpointهایی مفید باشد که همیشه همان JSON ثابت را برمی‌گردانند، یا به عنوان راهی سریع و آسان برای تولید پاسخ‌های dynamic کوچک مثل همین موردی که اینجا داریم.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="json-charset">charset در JSON</h4>
+
+<p>در مسیر برنامه‌نویسی خود ممکن است با APIهای JSON دیگری روبه‌رو شده باشید که پاسخ‌ها را با header مربوط به <code>Content-Type: application/json; charset=utf-8</code> ارسال می‌کنند.</p>
+
+<p>اضافه کردن پارامتر <code>charset</code> به این شکل معمولا لازم نیست. <a href="https://tools.ietf.org/html/rfc8259#section-8.1">RFC مربوط به JSON</a> می‌گوید:</p>
+
+<blockquote>
+<p>JSON text exchanged between systems that are not part of a closed ecosystem MUST be encoded using UTF-8.</p>
+</blockquote>
+
+<p>کلمه مهم اینجا «MUST» است. چون API ما یک برنامه عمومی و در معرض کاربران خواهد بود، یعنی پاسخ‌های JSON ما باید همیشه با UTF-8 encode شوند. همچنین یعنی <em>کلاینت می‌تواند با خیال راحت فرض کند پاسخ‌هایی که دریافت می‌کند همیشه UTF-8 encoded هستند</em>. به همین دلیل، اضافه کردن پارامتر <code>charset=utf-8</code> زائد است.</p>
+
+<p>این RFC <a href="https://tools.ietf.org/html/rfc8259#page-11">همچنین صراحتا اشاره می‌کند</a> که media type مربوط به <code>application/json</code> پارامتر <code>charset</code> تعریف‌شده‌ای ندارد، یعنی از نظر فنی اضافه کردن آن هم نادرست است.</p>
+
+<p>در واقع، در برنامه ما پارامتر <code>charset</code> هیچ هدفی را دنبال نمی‌کند و امن و البته درست است که آن را در header مربوط به <code>Content-Type: application/json</code> قرار ندهیم.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="03.00-sending-json-responses.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="03.02-json-encoding.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "03.00-sending-json-responses.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "03.02-json-encoding.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
