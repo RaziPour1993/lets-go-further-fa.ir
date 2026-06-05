@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>decode کردن JSON &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="04.00-parsing-json-requests.html">parse کردن درخواست‌های JSON</a> &rsaquo; decode کردن JSON</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="04.00-parsing-json-requests.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="04.02-managing-bad-requests.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۴.۱.</div>
+			<h2 id="json-decoding">decode کردن JSON</h2>
+
+<p>درست مثل encoding به JSON، برای <em>decode</em> کردن JSON به یک مقدار native در Go دو رویکرد دارید: استفاده از type مربوط به <a href="https://golang.org/pkg/encoding/json/#Decoder"><code>json.Decoder</code></a> یا استفاده از function مربوط به <a href="https://golang.org/pkg/encoding/json/#Unmarshal"><code>json.Unmarshal()</code></a>.</p>
+
+<p>هر دو رویکرد مزایا و معایب خودشان را دارند، اما برای decode کردن JSON از یک HTTP request body، استفاده از <code>json.Decoder</code> معمولا بهترین انتخاب است. این روش نسبت به <code>json.Unmarshal()</code> efficientتر است، کد کمتری لازم دارد، و چند setting مفید ارائه می‌کند که می‌توانید برای تنظیم رفتار آن استفاده کنید.</p>
+
+<p>نشان دادن نحوه کار <code>json.Decoder</code> با کد از توضیح کلامی ساده‌تر است، پس مستقیم وارد کار می‌شویم و <code>createMovieHandler</code> را به این شکل به‌روزرسانی می‌کنیم:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;encoding/json&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">createMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Declare an anonymous struct to hold the information that we expect to be in the 
+</span><span class="c1"></span>    <span class="c1">// HTTP request body (note that the field names and types in the struct are a subset
+</span><span class="c1"></span>    <span class="c1">// of the Movie struct that we created earlier). This struct will be our *target 
+</span><span class="c1"></span>    <span class="c1">// decode destination*.
+</span><span class="c1"></span>    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>   <span class="kt">string</span>   <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+        <span class="nx">Year</span>    <span class="kt">int32</span>    <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+        <span class="nx">Runtime</span> <span class="kt">int32</span>    <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span>
+        <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span> <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Initialize a new json.Decoder instance which reads from the request body, and 
+</span><span class="c1"></span>    <span class="c1">// then use the Decode() method to decode the body contents into the input struct. 
+</span><span class="c1"></span>    <span class="c1">// Importantly, notice that when we call Decode() we pass a *pointer* to the input 
+</span><span class="c1"></span>    <span class="c1">// struct as the target decode destination. If there was an error during decoding,
+</span><span class="c1"></span>    <span class="c1">// we use our generic errorResponse() helper to send a 400 Bad Request response
+</span><span class="c1"></span>    <span class="c1">// with the error message to the client.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">Body</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusBadRequest</span><span class="p">,</span> <span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Dump the contents of the input struct in an HTTP response.
+</span><span class="c1"></span>    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>چند نکته مهم و جالب درباره این کد وجود دارد که باید به آن‌ها اشاره کنیم:</p>
+
+<ul>
+<li><p>هنگام صدا زدن <code>Decode()</code> باید یک <em>pointer غیر nil</em> را به عنوان مقصد decode پاس بدهید. اگر از pointer استفاده نکنید، در runtime خطای <a href="https://golang.org/pkg/encoding/json/#InvalidUnmarshalError"><code>json.InvalidUnmarshalError</code></a> برمی‌گرداند.</p></li>
+
+<li><p>اگر مقصد decode یک struct باشد، مثل مورد ما، fieldهای struct باید exported باشند، یعنی با حرف بزرگ شروع شوند. درست مثل encoding، باید exported باشند تا برای پکیج <code>encoding/json</code> قابل مشاهده باشند.</p></li>
+
+<li><p>هنگام decode کردن یک JSON object به struct، جفت‌های key-value داخل JSON بر اساس نام struct tagها به fieldهای struct map می‌شوند. اگر struct tag منطبق وجود نداشته باشد، Go تلاش می‌کند مقدار را داخل fieldای decode کند که با key name منطبق است؛ match دقیق ترجیح داده می‌شود، اما اگر نبود سراغ match غیر حساس به بزرگی و کوچکی حروف می‌رود. <em>هر جفت key-value در JSON که نتواند با موفقیت به fieldهای struct map شود، بی‌صدا نادیده گرفته می‌شود</em>.</p></li>
+
+<li><p>بعد از خوانده شدن <code>r.Body</code> لازم نیست آن را close کنید. این کار به صورت خودکار توسط <code>http.Server</code> در Go انجام می‌شود، پس نیازی نیست شما انجامش دهید.</p></li>
+</ul>
+
+<p>خب، بیایید امتحانش کنیم.</p>
+
+<p>application را اجرا کنید، بعد یک terminal window دوم باز کنید و یک request به endpoint مربوط به <code>POST /v1/movies</code> با یک JSON request body معتبر شامل مقداری داده فیلم بفرستید. باید پاسخی شبیه این ببینید:</p>
+
+<figure class="code bash">
+<pre><samp># Create a BODY variable containing the JSON data that we want to send.</samp>
+$ BODY=&#39;{&#34;title&#34;:&#34;Moana&#34;,&#34;year&#34;:2016,&#34;runtime&#34;:107, &#34;genres&#34;:[&#34;animation&#34;,&#34;adventure&#34;]}&#39;
+
+<samp># Use the -d flag to send the contents of the BODY variable as the HTTP request body.
+# Note that curl will default to sending a POST request when the -d flag is used.</samp>
+$ curl -i -d &#34;$BODY&#34; localhost:4000/v1/movies
+<samp>HTTP/1.1 200 OK
+Date: Tue, 06 Apr 2021 17:13:46 GMT
+Content-Length: 65
+Content-Type: text/plain; charset=utf-8
+
+{Title:Moana Year:2016 Runtime:107 Genres:[animation adventure]}</samp></pre>
+</figure>
+
+<p>عالی! به نظر می‌رسد خوب کار کرده است. از داده‌ای که در پاسخ dump شده می‌بینیم مقدارهایی که در request body فرستادیم، داخل fieldهای مناسب struct مربوط به <code>input</code> decode شده‌اند.</p>
+
+<h3 id="zero-values">Zero valueها</h3>
+
+<p>بیایید سریع ببینیم اگر یک جفت key-value مشخص را از JSON request body حذف کنیم چه اتفاقی می‌افتد. برای مثال، یک request بدون <code>year</code> در JSON می‌فرستیم، به این شکل:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;title&#34;:&#34;Moana&#34;,&#34;runtime&#34;:107, &#34;genres&#34;:[&#34;animation&#34;,&#34;adventure&#34;]}&#39;
+$ curl -d &#34;$BODY&#34; localhost:4000/v1/movies
+<samp>{Title:Moana Year:0 Runtime:107 Genres:[animation adventure]}</samp></pre>
+</figure>
+
+<p>همان‌طور که احتمالا حدس زده‌اید، وقتی این کار را انجام می‌دهیم field مربوط به <code>Year</code> در struct مربوط به <code>input</code> با zero value خودش باقی می‌ماند؛ که در این مورد <code>0</code> است، چون field مربوط به <code>Year</code> از type نوع <code>int32</code> است.</p>
+
+<p>این ما را به یک سوال جالب می‌رساند: چطور می‌توان تفاوت بین حالتی را فهمید که client <em>یک جفت key-value را اصلا ارائه نکرده</em>، و حالتی که <em>آن جفت key-value را ارائه کرده اما عمدا مقدارش را روی zero value تنظیم کرده است</em>؟ مثل این:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;title&#34;:&#34;Moana&#34;,&#34;year&#34;:0,&#34;runtime&#34;:107, &#34;genres&#34;:[&#34;animation&#34;,&#34;adventure&#34;]}&#39;
+$ curl -d &#34;$BODY&#34; localhost:4000/v1/movies
+<samp>{Title:Moana Year:0 Runtime:107 Genres:[animation adventure]}</samp></pre>
+</figure>
+
+<p>با وجود متفاوت بودن HTTP requestها، نتیجه نهایی یکسان است و فورا مشخص نیست چطور باید تفاوت این دو سناریو را تشخیص داد. بعدا در کتاب به این موضوع برمی‌گردیم، اما فعلا فقط خوب است از این رفتار آگاه باشید.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="supported-destination-types">typeهای مقصد پشتیبانی‌شده</h4>
+
+<p>مهم است اشاره کنیم که بعضی typeهای JSON فقط می‌توانند با موفقیت به بعضی typeهای Go decode شوند. برای مثال، اگر string در JSON یعنی <code>&quot;foo&quot;</code> را داشته باشید، می‌تواند به <code>string</code> در Go decode شود، اما تلاش برای decode کردن آن به <code>int</code> یا <code>bool</code> در Go باعث خطا در runtime می‌شود؛ همان‌طور که در فصل بعد نشان می‌دهیم.</p>
+
+<p>جدول زیر مقصدهای decode پشتیبانی‌شده را برای typeهای مختلف JSON نشان می‌دهد:</p>
+
+<table>
+<thead>
+<tr>
+<th>نوع JSON</th>
+<th>⇒</th>
+<th>typeهای Go پشتیبانی‌شده</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>boolean در JSON</td>
+<td>⇒</td>
+<td><code>bool</code></td>
+</tr>
+
+<tr>
+<td>string در JSON</td>
+<td>⇒</td>
+<td><code>string</code></td>
+</tr>
+
+<tr>
+<td>number در JSON</td>
+<td>⇒</td>
+<td><code>int*</code>, <code>uint*</code>, <code>float*</code>, <code>rune</code></td>
+</tr>
+
+<tr>
+<td>array در JSON</td>
+<td>⇒</td>
+<td><code>array</code>, <code>slice</code></td>
+</tr>
+
+<tr>
+<td>object در JSON</td>
+<td>⇒</td>
+<td><code>struct</code>, <code>map</code></td>
+</tr>
+</tbody>
+</table>
+
+<h4 id="using-the-json-unmarshal-function">استفاده از function مربوط به json.Unmarshal</h4>
+
+<p>همان‌طور که در ابتدای این فصل گفتیم، می‌توان از function مربوط به <a href="https://golang.org/pkg/encoding/json/#Unmarshal"><code>json.Unmarshal()</code></a> هم برای decode کردن یک HTTP request body استفاده کرد.</p>
+
+<p>برای مثال، می‌توانید در یک handler به این شکل از آن استفاده کنید:</p>
+
+<figure class="code go">
+<pre><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">exampleHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Foo</span> <span class="kt">string</span> <span class="s">`</span><span class="s">json:&#34;foo&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Use io.ReadAll() to read the entire request body into a []byte slice.
+</span><span class="c1"></span>    <span class="nx">body</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">io</span><span class="p">.</span><span class="nf">ReadAll</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">Body</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+    
+    <span class="c1">// Use the json.Unmarshal() function to decode the JSON in the []byte slice to the
+</span><span class="c1"></span>    <span class="c1">// input struct. Again, notice that we are using a *pointer* to the input
+</span><span class="c1"></span>    <span class="c1">// struct as the decode destination.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="p">=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">Unmarshal</span><span class="p">(</span><span class="nx">body</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusBadRequest</span><span class="p">,</span> <span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>استفاده از این رویکرد مشکلی ندارد؛ کد کار می‌کند و روشن و ساده است. اما نسبت به رویکرد <code>json.Decoder</code> که همین حالا از آن استفاده می‌کنیم، مزیت اضافه‌ای ارائه نمی‌دهد.</p>
+
+<p>کد نه تنها کمی verboseتر است، بلکه efficientتر هم نیست. اگر برای این use case مشخص <a href="https://gist.github.com/alexedwards/d3d44ef77efb91a6e16048f60e72c57d">performance نسبی را benchmark کنیم</a>، می‌بینیم استفاده از <code>json.Unmarshal()</code> حدود ۸۰٪ memory بیشتری (B/op) نسبت به <code>json.Decoder</code> نیاز دارد و کمی هم کندتر است (ns/op).</p>
+
+<figure class="code bash">
+<pre>$ go test -run=^$ -bench=. -benchmem -count=3 -benchtime=5s
+<samp>goos: linux
+goarch: amd64
+BenchmarkUnmarshal-8      528088      9543 ns/op     2992 B/op     20 allocs/op
+BenchmarkUnmarshal-8      554365     10469 ns/op     2992 B/op     20 allocs/op
+BenchmarkUnmarshal-8      537139     10531 ns/op     2992 B/op     20 allocs/op
+BenchmarkDecoder-8        811063      8644 ns/op     1664 B/op     21 allocs/op
+BenchmarkDecoder-8        672088      8529 ns/op     1664 B/op     21 allocs/op
+BenchmarkDecoder-8       1000000      7573 ns/op     1664 B/op     21 allocs/op</samp></pre>
+</figure>
+
+<h4 id="additional-json-decoding-nuances">جزئیات بیشتر در decode کردن JSON</h4>
+
+<p>چند نکته ظریف درباره decode کردن JSON وجود دارد که دانستنشان مهم یا جالب است، اما به‌خوبی در متن اصلی این کتاب جا نمی‌گیرند. <a href="21.05-json-decoding-nuances.html">این ضمیمه</a> را اضافه کرده‌ام که آن‌ها را با جزئیات توضیح می‌دهد و نشان می‌دهد.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="04.00-parsing-json-requests.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="04.02-managing-bad-requests.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "04.00-parsing-json-requests.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "04.02-managing-bad-requests.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
