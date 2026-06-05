@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>مقدمه &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; مقدمه</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="00.01-contents.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="01.01-prerequisites.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱.</div>
+			<h1 id="introduction">مقدمه</h1>
+
+<p>در این کتاب، ساخت کامل یک برنامه به نام <em>Greenlight</em> را از ابتدا تا انتها قدم‌به‌قدم پیش می‌بریم؛ یک API مبتنی بر JSON برای دریافت و مدیریت اطلاعات مربوط به فیلم‌ها. می‌توانید عملکرد اصلی آن را تا حدی شبیه <a href="http://www.omdbapi.com/">Open Movie Database API</a> در نظر بگیرید.</p>
+
+<p>در نهایت، API برنامه <em>Greenlight</em> از endpointها و عملیات‌های زیر پشتیبانی خواهد کرد:</p>
+
+<table>
+<thead>
+<tr>
+<th>عملیات</th>
+<th>الگوی URL</th>
+<th>متد</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>نمایش وضعیت سلامت برنامه و اطلاعات نسخه</td>
+<td>/v1/healthcheck</td>
+<td>GET</td>
+</tr>
+
+<tr>
+<td>نمایش جزئیات همه فیلم‌ها</td>
+<td>/v1/movies</td>
+<td>GET</td>
+</tr>
+
+<tr>
+<td>ایجاد یک فیلم جدید</td>
+<td>/v1/movies</td>
+<td>POST</td>
+</tr>
+
+<tr>
+<td>نمایش جزئیات یک فیلم مشخص</td>
+<td>/v1/movies/:id</td>
+<td>GET</td>
+</tr>
+
+<tr>
+<td>به‌روزرسانی جزئیات یک فیلم مشخص</td>
+<td>/v1/movies/:id</td>
+<td>PATCH</td>
+</tr>
+
+<tr>
+<td>حذف یک فیلم مشخص</td>
+<td>/v1/movies/:id</td>
+<td>DELETE</td>
+</tr>
+
+<tr>
+<td>ثبت‌نام یک کاربر جدید</td>
+<td>/v1/users</td>
+<td>POST</td>
+</tr>
+
+<tr>
+<td>فعال‌سازی یک کاربر مشخص</td>
+<td>/v1/users/activated</td>
+<td>PUT</td>
+</tr>
+
+<tr>
+<td>به‌روزرسانی رمز عبور یک کاربر مشخص</td>
+<td>/v1/users/password</td>
+<td>PUT</td>
+</tr>
+
+<tr>
+<td>تولید یک توکن احراز هویت جدید</td>
+<td>/v1/tokens/authentication</td>
+<td>POST</td>
+</tr>
+
+<tr>
+<td>تولید یک توکن جدید برای بازنشانی رمز عبور</td>
+<td>/v1/tokens/password-reset</td>
+<td>POST</td>
+</tr>
+
+<tr>
+<td>نمایش معیارهای برنامه</td>
+<td>/debug/vars</td>
+<td>GET</td>
+</tr>
+</tbody>
+</table>
+<p>برای اینکه دیدی از شکل API از نگاه یک کلاینت داشته باشید، تا پایان این کتاب endpoint مربوط به <code>GET /v1/movies/:id</code> یک پاسخ HTTP با بدنه JSON شبیه نمونه زیر برمی‌گرداند:</p>
+
+<figure class="code bash">
+<pre>$ curl -H &#34;Authorization: Bearer RIDBIAE3AMMK57T6IAEBUGA7ZQ&#34; localhost:4000/v1/movies/1
+<samp>{
+    &#34;movie&#34;: {
+        &#34;id&#34;: 1,
+        &#34;title&#34;: &#34;Moana&#34;,
+        &#34;year&#34;: 2016,
+        &#34;runtime&#34;: &#34;107 mins&#34;,
+        &#34;genres&#34;: [
+            &#34;animation&#34;,
+            &#34;adventure&#34;
+        ],
+        &#34;version&#34;: 1
+    }
+}</samp></pre>
+</figure>
+
+<p>در پشت صحنه، از PostgreSQL به عنوان پایگاه داده برای ذخیره دائمی همه داده‌ها استفاده خواهیم کرد. در پایان کتاب نیز API نهایی را روی یک سرور لینوکسی در DigitalOcean مستقر می‌کنیم.</p>
+
+<aside class="important"><p>
+<strong>مهم:</strong> نسخه Go 1.25 همراه با پشتیبانی <em>آزمایشی</em> از بسته جدید <a href="https://pkg.go.dev/encoding/json/v2@master"><code>encoding/json/v2</code></a> منتشر شده است. این بسته را می‌توان در زمان build با تنظیم متغیر محیطی <code>GOEXPERIMENT=jsonv2</code> فعال کرد.</p>
+
+<p>این بسته جدید چند <a href="https://pkg.go.dev/encoding/json@go1.25.0#hdr-Migrating_to_v2">بهبود خوب</a> برای کار با JSON در Go به همراه دارد، اما چون هنوز آزمایشی است، رفتار و طراحی آن همچنان در حال ارزیابی است و ممکن است تغییر کند. به همین دلیل، در این کتاب از بسته پایدار <code>encoding/json</code> استفاده می‌کنیم؛ بسته‌ای که به خاطر تعهد سازگاری Go، به صورت «همیشه پشتیبانی‌شده» باقی خواهد ماند.</p>
+
+<p>وقتی <code>encoding/json/v2</code> دیگر آزمایشی نباشد و به صورت عمومی در کتابخانه استاندارد در دسترس قرار بگیرد، این کتاب را به‌روزرسانی می‌کنم تا از آن استفاده کند.
+</p></aside>
+
+<h3 id="conventions">قراردادها</h3>
+
+<p>بلوک‌های کد در این کتاب با پس‌زمینه نقره‌ای نمایش داده می‌شوند، مثل نمونه زیر. اگر یک بلوک کد خیلی طولانی باشد، بخش‌هایی که به بحث مربوط نیستند ممکن است با سه‌نقطه جایگزین شوند. برای اینکه دنبال کردن کد آسان‌تر باشد، بیشتر بلوک‌های کد یک نوار عنوان در بالا دارند که نام فایل حاوی کد را نشان می‌دهد. مثل این:</p>
+
+<figure class="code go">
+<figcaption>File: hello.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span> <span class="c1">// Indicates that some existing code has been omitted.
+</span><span class="c1"></span>
+<span class="kd">func</span> <span class="nf">sayHello</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Println</span><span class="p">(</span><span class="s">&#34;Hello world!&#34;</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>دستورهای ترمینال یا خط فرمان با پس‌زمینه مشکی نمایش داده می‌شوند و معمولا با علامت دلار شروع می‌شوند. این دستورها باید روی هر سیستم‌عامل مبتنی بر Unix، از جمله macOS و Linux، کار کنند. خروجی نمونه با رنگ نقره‌ای زیر دستور نمایش داده می‌شود، مثل این:</p>
+
+<figure class="code bash">
+<pre>$ echo &#34;Hello world!&#34;
+<samp>Hello world!</samp></pre>
+</figure>
+
+<p>اگر از Windows استفاده می‌کنید، باید این دستورها را با معادل آن‌ها در Command Prompt جایگزین کنید یا کار مورد نظر را از طریق رابط گرافیکی معمول Windows انجام دهید.</p>
+
+<p>لطفا توجه داشته باشید که تاریخ‌ها و زمان‌هایی که در اسکرین‌شات‌ها و خروجی نمونه دستورها دیده می‌شوند فقط جنبه نمایشی دارند. لزوما با یکدیگر هماهنگ نیستند و در سراسر کتاب نیز الزاما ترتیب زمانی پیوسته‌ای ندارند.</p>
+
+<p>برخی فصل‌های این کتاب با بخشی به نام <em>اطلاعات تکمیلی</em> تمام می‌شوند. این بخش‌ها شامل مطالبی هستند که مستقیما به ساخت برنامه ما مربوط نیستند، اما دانستنشان همچنان مهم است یا گاهی فقط جالب است.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="00.01-contents.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="01.01-prerequisites.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "00.01-contents.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "01.01-prerequisites.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
