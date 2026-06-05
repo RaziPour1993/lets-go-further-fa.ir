@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی پروژه و ساختار اسکلت &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="02.00-getting-started.html">شروع به کار</a> &rsaquo; راه‌اندازی پروژه و ساختار اسکلت</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="02.00-getting-started.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="02.02-a-basic-http-server.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۲.۱.</div>
+			<h2 id="project-setup-and-skeleton-structure">راه‌اندازی پروژه و ساختار اسکلت</h2>
+
+<p>کار را با ایجاد یک دایرکتوری به نام <code>greenlight</code> شروع می‌کنیم تا نقش «خانه» سطح بالای این پروژه را داشته باشد. من دایرکتوری پروژه خودم را در <code>$HOME/Projects/greenlight</code> ایجاد می‌کنم، اما اگر خواستید می‌توانید محل دیگری را انتخاب کنید.</p>
+
+<figure class="code bash">
+<pre>$ mkdir -p $HOME/Projects/greenlight</pre>
+</figure>
+
+<p>سپس وارد این دایرکتوری شوید و از دستور <code>go mod init</code> استفاده کنید تا <em>modules</em> را برای پروژه فعال کنید.</p>
+
+<p>هنگام اجرای این دستور، باید یک <em>module path</em> مشخص کنید. این مقدار در اصل یک شناسه یکتا برای پروژه شماست. در این کتاب من از <code>greenlight.alexedwards.net</code> به عنوان module path استفاده می‌کنم، اما اگر همراه کتاب پیش می‌روید بهتر است آن را با مقداری جایگزین کنید که مخصوص خودتان باشد.</p>
+
+<figure class="code bash">
+<pre>$ cd $HOME/Projects/greenlight
+$ go mod init greenlight.alexedwards.net
+<samp>go: creating new go.mod: module greenlight.alexedwards.net</samp></pre>
+</figure>
+
+<p>در این مرحله می‌بینید که یک فایل <code>go.mod</code> در ریشه دایرکتوری پروژه شما ایجاد شده است. اگر آن را باز کنید، باید چیزی شبیه این ببینید:</p>
+
+<figure class="code plain">
+<figcaption>File: go.mod</figcaption>
+<pre>module greenlight.alexedwards.net
+
+go 1.25.0</pre>
+</figure>
+
+<p>در کتاب اول <em>Let&rsquo;s Go</em> درباره modules با جزئیات صحبت کردیم، اما برای یادآوری سریع، نکات اصلی را اینجا مرور می‌کنیم.</p>
+
+<ul>
+<li>وقتی یک فایل معتبر <code>go.mod</code> در ریشه دایرکتوری پروژه شما وجود داشته باشد، پروژه شما <em>یک module است</em>.</li>
+<li>وقتی داخل دایرکتوری پروژه خود کار می‌کنید و یک وابستگی را با <code>go get</code> دانلود می‌کنید، نسخه دقیق آن وابستگی در فایل <code>go.mod</code> ثبت می‌شود. چون نسخه دقیق مشخص است، اطمینان از buildهای تکرارپذیر روی ماشین‌ها و محیط‌های مختلف بسیار آسان‌تر می‌شود.</li>
+<li>وقتی کد پروژه را اجرا یا build می‌کنید، Go از همان وابستگی‌های دقیقی استفاده می‌کند که در فایل <code>go.mod</code> فهرست شده‌اند. اگر وابستگی‌های لازم از قبل روی ماشین محلی شما وجود نداشته باشند، Go آن‌ها را به صورت خودکار برایتان دانلود می‌کند؛ همراه با همه وابستگی‌های بازگشتی آن‌ها.</li>
+<li>فایل <code>go.mod</code> همچنین <em>module path</em> را تعریف می‌کند که در مورد من <code>greenlight.alexedwards.net</code> است. این مقدار در اصل شناسه‌ای است که به عنوان <em>root import path</em> برای پکیج‌های پروژه شما استفاده خواهد شد.</li>
+<li>بهتر است module path را برای خودتان و پروژه‌تان یکتا انتخاب کنید. یک قرارداد رایج در جامعه Go این است که آن را بر اساس URLای بسازید که مالک آن هستید.</li>
+</ul>
+
+<aside class="hint"><p>
+<strong>نکته</strong>: اگر درباره هر بخشی از modules یا نحوه کار آن‌ها مطمئن نیستید، <a href="https://github.com/golang/go/wiki/Modules">Go Modules Wiki</a> رسمی منبع بسیار خوبی است و پاسخ‌های طیف گسترده‌ای از <a href="https://github.com/golang/go/wiki/Modules#faqs">پرسش‌های متداول</a> را در خود دارد.
+</p></aside>
+
+<h3 id="generating-the-skeleton-directory-structure">ایجاد ساختار دایرکتوری اسکلت</h3>
+
+<p>خوب، حالا که دایرکتوری پروژه ایجاد شده و فایل <code>go.mod</code> را داریم، می‌توانید دستورهای زیر را اجرا کنید تا یک ساختار اسکلت سطح بالا برای پروژه ایجاد شود:</p>
+
+<figure class="code bash">
+<pre>$ mkdir -p bin cmd/api internal migrations remote
+$ touch Makefile
+$ touch cmd/api/main.go</pre>
+</figure>
+
+<p>در این مرحله دایرکتوری پروژه شما باید دقیقا به این شکل باشد:</p>
+
+<figure class="code plain tree"><pre>
+.
+├── <b>bin</b>
+├── <b>cmd</b>
+│   └── <b>api</b>
+│       └── main.go
+├── <b>internal</b>
+├── <b>migrations</b>
+├── <b>remote</b>
+├── go.mod
+└── Makefile</pre></figure>
+
+<p>بیایید کمی درباره این فایل‌ها و پوشه‌ها صحبت کنیم و توضیح بدهیم که در پروژه نهایی ما چه نقشی خواهند داشت.</p>
+
+<ul>
+<li>دایرکتوری <code>bin</code> شامل باینری‌های کامپایل‌شده برنامه ما خواهد بود که آماده استقرار روی سرور production هستند.</li>
+<li>دایرکتوری <code>cmd/api</code> شامل کدهای اختصاصی برنامه API ما، یعنی <em>Greenlight</em>، خواهد بود. این شامل کد اجرای سرور، خواندن و نوشتن درخواست‌های HTTP و مدیریت احراز هویت می‌شود.</li>
+<li>دایرکتوری <code>internal</code> شامل پکیج‌های کمکی مختلفی خواهد بود که API ما از آن‌ها استفاده می‌کند. این دایرکتوری کدهای مربوط به تعامل با پایگاه داده، اعتبارسنجی داده، ارسال ایمیل و موارد مشابه را در خود دارد. به طور کلی، هر کدی که اختصاصی خود برنامه <em>نباشد</em> و امکان استفاده دوباره از آن وجود داشته باشد، اینجا قرار می‌گیرد. کد Go ما زیر <code>cmd/api</code> پکیج‌های داخل دایرکتوری <code>internal</code> را <em>import</em> می‌کند، اما هرگز برعکس.</li>
+<li>دایرکتوری <code>migrations</code> شامل فایل‌های migration مربوط به SQL برای پایگاه داده ما خواهد بود.</li>
+<li>دایرکتوری <code>remote</code> شامل فایل‌های پیکربندی و اسکریپت‌های راه‌اندازی برای سرور production ما خواهد بود.</li>
+<li>فایل <code>go.mod</code> وابستگی‌های پروژه، نسخه‌ها و module path را اعلام می‌کند.</li>
+<li>فایل <code>Makefile</code> شامل <em>recipe</em>هایی برای خودکارسازی کارهای مدیریتی رایج خواهد بود؛ مثل audit کردن کد Go، ساخت باینری‌ها و اجرای migrationهای پایگاه داده.</li>
+</ul>
+
+<p>مهم است اشاره کنیم که نام دایرکتوری <code>internal</code> در Go معنا و رفتار ویژه‌ای دارد: هر پکیجی که زیر این دایرکتوری قرار بگیرد، فقط می‌تواند توسط کدی import شود که <em>داخل والد دایرکتوری <code>internal</code></em> قرار دارد. در مورد ما، این یعنی هر پکیجی که در <code>internal</code> قرار بگیرد فقط توسط کد داخل دایرکتوری پروژه <code>greenlight</code> قابل import است.</p>
+
+<p>یا اگر از زاویه دیگر نگاه کنیم، یعنی هر پکیجی زیر <code>internal</code> <em>نمی‌تواند توسط کدی خارج از پروژه ما import شود</em>.</p>
+
+<p>این مفید است، چون مانع می‌شود codebaseهای دیگر پکیج‌های داخل دایرکتوری <code>internal</code> ما را import کنند و به آن‌ها وابسته شوند؛ پکیج‌هایی که ممکن است نسخه‌بندی نشده یا پشتیبانی‌نشده باشند، حتی اگر کد پروژه در جایی مثل GitHub به صورت عمومی در دسترس باشد.</p>
+
+<h3 id="hello-world">Hello world!</h3>
+
+<p>قبل از ادامه، بیایید سریع بررسی کنیم که همه چیز درست راه‌اندازی شده است. فایل <code>cmd/api/main.go</code> را در ویرایشگر متن خود باز کنید و کد زیر را به آن اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/main.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="s">&#34;fmt&#34;</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Println</span><span class="p">(</span><span class="s">&#34;Hello world!&#34;</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>این فایل را ذخیره کنید، سپس در ترمینال از دستور <code>go run</code> استفاده کنید تا کد داخل پکیج <code>cmd/api</code> کامپایل و اجرا شود. اگر همه چیز درست باشد، خروجی زیر را خواهید دید:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api
+<samp>Hello world!</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="02.00-getting-started.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="02.02-a-basic-http-server.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "02.00-getting-started.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "02.02-a-basic-http-server.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
