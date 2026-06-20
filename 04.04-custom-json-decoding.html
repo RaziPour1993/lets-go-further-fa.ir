@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>decode سفارشی JSON &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="04.00-parsing-json-requests.html">parse کردن درخواست‌های JSON</a> &rsaquo; decode سفارشی JSON</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="04.03-restricting-inputs.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="04.05-validating-json-input.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۴.۴.</div>
+			<h2 id="custom-json-decoding">decode سفارشی JSON</h2>
+
+<p>قبلا در این کتاب مقداری رفتار encoding سفارشی JSON به API اضافه کردیم تا اطلاعات runtime فیلم در پاسخ‌های JSON با فرمت <code>&quot;&lt;runtime&gt; mins&quot;</code> نمایش داده شود.</p>
+
+<p>در این فصل از سمت دیگر به همین موضوع نگاه می‌کنیم و application را به‌روزرسانی می‌کنیم تا <code>createMovieHandler</code> اطلاعات runtime را با همین فرمت <em>بپذیرد</em>.</p>
+
+<p>اگر همین حالا تلاش کنید requestای با runtime فیلم در این فرمت بفرستید، یک پاسخ <code>400 Bad Request</code> می‌گیرید؛ چون امکان decode کردن یک JSON string داخل type نوع <code>int32</code> وجود ندارد. به این شکل:</p>
+
+<figure class="code bash">
+<pre>$ curl -d &#39;{&#34;title&#34;: &#34;Moana&#34;, &#34;runtime&#34;: &#34;107 mins&#34;}&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;body contains incorrect JSON type for \&#34;runtime\&#34;&#34;
+}</samp></pre>
+</figure>
+
+<p>برای اینکه این کار عملی شود، باید <em>فرایند decoding را intercept کنیم</em> و JSON string با فرمت <code>&quot;&lt;runtime&gt; mins&quot;</code> را خودمان به <code>int32</code> تبدیل کنیم.</p>
+
+<p><em>پس چطور می‌توانیم این کار را انجام دهیم؟</em></p>
+
+<h3 id="the-json-unmarshaler-interface">interface مربوط به json.Unmarshaler</h3>
+
+<p>نکته کلیدی اینجا شناخت interface مربوط به <a href="https://golang.org/pkg/encoding/json/#Unmarshaler"><code>json.Unmarshaler</code></a> در Go است، که به این شکل است:</p>
+
+<figure class="code go">
+<pre><span class="kd">type</span> <span class="nx">Unmarshaler</span> <span class="kd">interface</span> <span class="p">{</span>
+    <span class="nf">UnmarshalJSON</span><span class="p">(</span><span class="p">[</span><span class="p">]</span><span class="kt">byte</span><span class="p">)</span> <span class="kt">error</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>وقتی Go در حال decode کردن JSON است، بررسی می‌کند که آیا type مقصد interface مربوط به <code>json.Unmarshaler</code> را satisfy می‌کند یا نه. اگر این interface را satisfy <em>کند</em>، Go متد <code>UnmarshalJSON()</code> آن را صدا می‌زند تا مشخص کند JSON ارائه‌شده چطور باید داخل type هدف decode شود. این اساسا برعکس interface مربوط به <code>json.Marshaler</code> است که قبلا برای سفارشی کردن رفتار encoding به JSON استفاده کردیم.</p>
+
+<p>بیایید ببینیم در عمل چطور از این استفاده می‌شود.</p>
+
+<p>اولین کاری که باید انجام دهیم این است که <code>createMovieHandler</code> را به‌روزرسانی کنیم تا struct مربوط به <code>input</code> به جای یک <code>int32</code> معمولی، از type سفارشی <code>Runtime</code> ما استفاده کند. یادتان هست که type مربوط به <code>Runtime</code> همچنان <em>underlying type</em> برابر با <code>int32</code> دارد، اما با تبدیل کردن آن به یک custom type آزادیم که یک متد <code>UnmarshalJSON()</code> روی آن پیاده‌سازی کنیم.</p>
+
+<p>handler را به این شکل به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">createMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>   <span class="kt">string</span>       <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+        <span class="nx">Year</span>    <span class="kt">int32</span>        <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+        <span class="nx">Runtime</span> <span class="nx">data</span><span class="p">.</span><span class="nx">Runtime</span> <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span> <span class="c1">// Make this field a data.Runtime type.
+</span><span class="c1"></span>        <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span>     <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">badRequestResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>بعد سراغ فایل <code>internal/data/runtime.go</code> می‌رویم و یک متد <code>UnmarshalJSON()</code> به type مربوط به <code>Runtime</code> اضافه می‌کنیم. در این متد باید JSON string با فرمت <code>&quot;&lt;runtime&gt; mins&quot;</code> را parse کنیم، عدد runtime را به <code>int32</code> تبدیل کنیم، و بعد آن را به خود مقدار <code>Runtime</code> assign کنیم.</p>
+
+<p>این کار در واقع کمی ظریف است و چند جزئیات مهم دارد، پس احتمالا بهتر است وارد کد شویم و هم‌زمان با commentها توضیحش بدهیم.</p>
+
+<figure class="code go">
+<figcaption>File: internal/data/runtime.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;errors&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;strconv&#34;</span>
+    <span class="s">&#34;strings&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span><span class="p">)</span>
+
+<span class="c1">// Define an error that our UnmarshalJSON() method can return if we&#39;re unable to parse
+</span><span class="c1"></span><span class="c1">// or convert the JSON string successfully.
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">ErrInvalidRuntimeFormat</span> <span class="p">=</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="s">&#34;invalid runtime format&#34;</span><span class="p">)</span>
+
+<span class="kd">type</span> <span class="nx">Runtime</span> <span class="kt">int32</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Implement a UnmarshalJSON() method on the Runtime type so that it satisfies the
+</span><span class="c1"></span><span class="c1">// json.Unmarshaler interface. IMPORTANT: Because UnmarshalJSON() needs to modify the
+</span><span class="c1"></span><span class="c1">// receiver (our Runtime type), we must use a pointer receiver for this to work 
+</span><span class="c1"></span><span class="c1">// correctly. Otherwise, we will only be modifying a copy (which is then discarded when 
+</span><span class="c1"></span><span class="c1">// this method returns).
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">r</span> <span class="o">*</span><span class="nx">Runtime</span><span class="p">)</span> <span class="nf">UnmarshalJSON</span><span class="p">(</span><span class="nx">jsonValue</span> <span class="p">[</span><span class="p">]</span><span class="kt">byte</span><span class="p">)</span> <span class="kt">error</span> <span class="p">{</span>
+    <span class="c1">// We expect that the incoming JSON value will be a string in the format 
+</span><span class="c1"></span>    <span class="c1">// &#34;&lt;runtime&gt; mins&#34;, and the first thing we need to do is remove the surrounding 
+</span><span class="c1"></span>    <span class="c1">// double quotes from this string. If we can&#39;t unquote it, then we return the 
+</span><span class="c1"></span>    <span class="c1">// ErrInvalidRuntimeFormat error.
+</span><span class="c1"></span>    <span class="nx">unquotedJSONValue</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">strconv</span><span class="p">.</span><span class="nf">Unquote</span><span class="p">(</span><span class="nb">string</span><span class="p">(</span><span class="nx">jsonValue</span><span class="p">)</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">ErrInvalidRuntimeFormat</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Split the string to isolate the part containing the number. 
+</span><span class="c1"></span>    <span class="nx">parts</span> <span class="o">:=</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">Split</span><span class="p">(</span><span class="nx">unquotedJSONValue</span><span class="p">,</span> <span class="s">&#34; &#34;</span><span class="p">)</span>
+
+    <span class="c1">// Sanity check the parts of the string to make sure it was in the expected format. 
+</span><span class="c1"></span>    <span class="c1">// If it isn&#39;t, we return the ErrInvalidRuntimeFormat error again.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nx">parts</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span> <span class="o">||</span> <span class="nx">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">!=</span> <span class="s">&#34;mins&#34;</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">ErrInvalidRuntimeFormat</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Otherwise, parse the string containing the number into an int32. Again, if this
+</span><span class="c1"></span>    <span class="c1">// fails return the ErrInvalidRuntimeFormat error.
+</span><span class="c1"></span>    <span class="nx">i</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">strconv</span><span class="p">.</span><span class="nf">ParseInt</span><span class="p">(</span><span class="nx">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">,</span> <span class="mi">10</span><span class="p">,</span> <span class="mi">32</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">ErrInvalidRuntimeFormat</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Convert the int32 to a Runtime type and assign this to the receiver. Note that we
+</span><span class="c1"></span>    <span class="c1">// use the * operator to dereference the receiver (which is a pointer to a Runtime 
+</span><span class="c1"></span>    <span class="c1">// type) in order to set the underlying value of the pointer.
+</span><span class="c1"></span>    <span class="o">*</span><span class="nx">r</span> <span class="p">=</span> <span class="nf">Runtime</span><span class="p">(</span><span class="nx">i</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="kc">nil</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>وقتی این کار انجام شد، application را دوباره راه‌اندازی کنید و بعد یک request با مقدار <code>runtime</code> در فرمت جدید داخل JSON بفرستید. باید ببینید request با موفقیت کامل می‌شود، عدد از string استخراج می‌شود و به field مربوط به <code>Runtime</code> در struct مربوط به <code>input</code> assign می‌شود. به این شکل:</p>
+
+<figure class="code bash">
+<pre>$ curl -d &#39;{&#34;title&#34;: &#34;Moana&#34;, &#34;runtime&#34;: &#34;107 mins&#34;}&#39; localhost:4000/v1/movies
+<samp>{Title:Moana Year:0 Runtime:107 Genres:[]}</samp></pre>
+</figure>
+
+<p>در مقابل، اگر request را با یک JSON number یا هر format دیگری بفرستید، حالا باید یک پاسخ خطا دریافت کنید که شامل پیام variable مربوط به <code>ErrInvalidRuntimeFormat</code> است، شبیه این:</p>
+
+<figure class="code bash">
+<pre>$ curl -d &#39;{&#34;title&#34;: &#34;Moana&#34;, &#34;runtime&#34;: 107}&#39; localhost:4000/v1/movies
+<samp>{
+        &#34;error&#34;: &#34;invalid runtime format&#34;
+}</samp>
+
+$ curl -d &#39;{&#34;title&#34;: &#34;Moana&#34;, &#34;runtime&#34;: &#34;107 minutes&#34;}&#39; localhost:4000/v1/movies
+<samp>{
+        &#34;error&#34;: &#34;invalid runtime format&#34;
+}</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="04.03-restricting-inputs.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="04.05-validating-json-input.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "04.03-restricting-inputs.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "04.05-validating-json-input.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>اعتبارسنجی ورودی JSON &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="04.00-parsing-json-requests.html">parse کردن درخواست‌های JSON</a> &rsaquo; اعتبارسنجی ورودی JSON</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="04.04-custom-json-decoding.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="05.00-database-setup-and-configuration.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۴.۵.</div>
+			<h2 id="validating-json-input">اعتبارسنجی ورودی JSON</h2>
+
+<p>در بسیاری از موارد، قبل از پردازش داده‌ای که از client می‌آید، می‌خواهید validation checkهای بیشتری روی آن انجام دهید تا مطمئن شوید با business ruleهای خاص شما سازگار است. در این فصل نشان می‌دهیم چطور این کار را در context یک JSON API انجام دهیم؛ با به‌روزرسانی <code>createMovieHandler</code> تا بررسی کند که:</p>
+
+<ul>
+<li>عنوان فیلمی که client ارائه کرده خالی نباشد و طول آن بیشتر از ۵۰۰ byte نباشد.</li>
+<li>سال فیلم خالی نباشد و بین ۱۸۸۸ و سال جاری باشد.</li>
+<li>runtime فیلم خالی نباشد و یک integer مثبت باشد.</li>
+<li>فیلم بین یک تا پنج ژانر یکتا داشته باشد.</li>
+</ul>
+
+<p>اگر هر کدام از این checkها fail شود، می‌خواهیم یک پاسخ <code>422 Unprocessable Entity</code> همراه با پیام‌های خطایی برای client بفرستیم که validation failureها را به‌روشنی توضیح می‌دهند.</p>
+
+<h3 id="creating-a-validator-package">ساخت پکیج validator</h3>
+
+<p>برای کمک به validation در سراسر این پروژه، یک پکیج کوچک <code>internal/validator</code> با چند helper type و function ساده و قابل استفاده مجدد می‌سازیم. اگر همراه کتاب کدنویسی می‌کنید، directory و فایل زیر را روی ماشین خودتان بسازید:</p>
+
+<figure class="code bash">
+<pre>$ mkdir internal/validator
+$ touch internal/validator/validator.go</pre>
+</figure>
+
+<p>بعد در این فایل جدید <code>internal/validator/validator.go</code>، کد زیر را اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>File: internal/validator/validator.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">validator</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;regexp&#34;</span>
+    <span class="s">&#34;slices&#34;</span>
+<span class="p">)</span>
+
+<span class="c1">// Declare a regular expression for sanity checking the format of email addresses (we&#39;ll
+</span><span class="c1"></span><span class="c1">// use this later in the book). If you&#39;re interested, this regular expression pattern is
+</span><span class="c1"></span><span class="c1">// taken from https://html.spec.whatwg.org/#valid-e-mail-address. Note: if you&#39;re 
+</span><span class="c1"></span><span class="c1">// reading this in PDF or EPUB format and cannot see the full pattern, please see the
+</span><span class="c1"></span><span class="c1">// note further down the page.
+</span><span class="c1"></span><span class="kd">var</span> <span class="p">(</span>
+    <span class="nx">EmailRX</span> <span class="p">=</span> <span class="nx">regexp</span><span class="p">.</span><span class="nf">MustCompile</span><span class="p">(</span><span class="s">&#34;^[a-zA-Z0-9.!#$%&amp;&#39;*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$&#34;</span><span class="p">)</span>
+<span class="p">)</span>
+
+<span class="c1">// Define a new Validator type which contains a map of validation errors.
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">Validator</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">Errors</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span>
+<span class="p">}</span>
+
+<span class="c1">// New is a helper which creates a new Validator instance with an empty errors map.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nf">New</span><span class="p">(</span><span class="p">)</span> <span class="o">*</span><span class="nx">Validator</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="o">&amp;</span><span class="nx">Validator</span><span class="p">{</span><span class="nx">Errors</span><span class="p">:</span> <span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">)</span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Valid returns true if the errors map doesn&#39;t contain any entries.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">v</span> <span class="o">*</span><span class="nx">Validator</span><span class="p">)</span> <span class="nf">Valid</span><span class="p">(</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+<span class="p">}</span>
+
+<span class="c1">// AddError adds an error message to the map (so long as no entry already exists for
+</span><span class="c1"></span><span class="c1">// the given key).
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">v</span> <span class="o">*</span><span class="nx">Validator</span><span class="p">)</span> <span class="nf">AddError</span><span class="p">(</span><span class="nx">key</span><span class="p">,</span> <span class="nx">message</span> <span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">exists</span> <span class="o">:=</span> <span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="p">;</span> <span class="p">!</span><span class="nx">exists</span> <span class="p">{</span>
+        <span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span> <span class="p">=</span> <span class="nx">message</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Check adds an error message to the map only if a validation check is not &#39;ok&#39;.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">v</span> <span class="o">*</span><span class="nx">Validator</span><span class="p">)</span> <span class="nf">Check</span><span class="p">(</span><span class="nx">ok</span> <span class="kt">bool</span><span class="p">,</span> <span class="nx">key</span><span class="p">,</span> <span class="nx">message</span> <span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="p">!</span><span class="nx">ok</span> <span class="p">{</span>
+        <span class="nx">v</span><span class="p">.</span><span class="nf">AddError</span><span class="p">(</span><span class="nx">key</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="c1">// Generic function which returns true if a specific value is in a list of permitted
+</span><span class="c1"></span><span class="c1">// values.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">PermittedValue</span><span class="p">[</span><span class="nx">T</span> <span class="nx">comparable</span><span class="p">]</span><span class="p">(</span><span class="nx">value</span> <span class="nx">T</span><span class="p">,</span> <span class="nx">permittedValues</span> <span class="o">...</span><span class="nx">T</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">slices</span><span class="p">.</span><span class="nf">Contains</span><span class="p">(</span><span class="nx">permittedValues</span><span class="p">,</span> <span class="nx">value</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// Matches returns true if a string value matches a specific regexp pattern.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nf">Matches</span><span class="p">(</span><span class="nx">value</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">rx</span> <span class="o">*</span><span class="nx">regexp</span><span class="p">.</span><span class="nx">Regexp</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">rx</span><span class="p">.</span><span class="nf">MatchString</span><span class="p">(</span><span class="nx">value</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// Generic function which returns true if all values in a slice are unique.
+</span><span class="c1"></span><span class="kd">func</span> <span class="nx">Unique</span><span class="p">[</span><span class="nx">T</span> <span class="nx">comparable</span><span class="p">]</span><span class="p">(</span><span class="nx">values</span> <span class="p">[</span><span class="p">]</span><span class="nx">T</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+    <span class="nx">uniqueValues</span> <span class="o">:=</span> <span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="nx">T</span><span class="p">]</span><span class="kt">bool</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="nx">_</span><span class="p">,</span> <span class="nx">value</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">values</span> <span class="p">{</span>
+        <span class="nx">uniqueValues</span><span class="p">[</span><span class="nx">value</span><span class="p">]</span> <span class="p">=</span> <span class="kc">true</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="nx">values</span><span class="p">)</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="nx">uniqueValues</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>خلاصه این کد:</p>
+
+<p>در کد بالا یک type سفارشی <code>Validator</code> تعریف کرده‌ایم که شامل یک map از errorهاست. type مربوط به <code>Validator</code> یک متد <code>Check()</code> برای اضافه کردن شرطی errorها به map فراهم می‌کند، و یک متد <code>Valid()</code> دارد که برمی‌گرداند آیا errors map خالی است یا نه. همچنین functionهای <code>PermittedValue()</code>، <code>Matches()</code> و <code>Unique()</code> را اضافه کرده‌ایم تا در انجام بعضی validation checkهای مشخص کمکمان کنند.</p>
+
+<p>از نظر مفهومی، این type یعنی <code>Validator</code> کاملا basic است، اما این چیز بدی نیست. همان‌طور که در طول کتاب می‌بینیم، در عمل به شکل غافلگیرکننده‌ای قدرتمند است و flexibility و کنترل زیادی روی validation checkها و نحوه انجامشان به ما می‌دهد.</p>
+
+<p>اگر این کتاب را در format PDF یا EPUB می‌خوانید و نمی‌توانید pattern کامل regexp مربوط به <code>EmailRX</code> را در snippet بالا ببینید، اینجا همان pattern به چند خط شکسته شده است:</p>
+
+<figure class="code plain">
+<pre>&#34;^[a-zA-Z0-9.!#$%&amp;&#39;*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?
+(?:\\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$&#34;</pre>
+</figure>
+
+<p>در کد شما، این pattern مربوط به regexp باید کاملا در یک خط و بدون whitespace باشد.</p>
+
+<h3 id="performing-validation-checks">انجام validation checkها</h3>
+
+<p>خب، بیایید شروع کنیم و از type مربوط به <code>Validator</code> استفاده کنیم!</p>
+
+<p>اولین کاری که باید انجام دهیم این است که فایل <code>cmd/api/errors.go</code> را به‌روزرسانی کنیم تا helper جدید <code>failedValidationResponse()</code> را شامل شود؛ helperای که یک <code>422 Unprocessable Entity</code> و محتوای errors map از type جدید <code>Validator</code> را به عنوان JSON response body می‌نویسد.</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/errors.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Note that the errors parameter here has the type map[string]string, which is exactly  
+</span><span class="c1"></span><span class="c1">// the same as the errors map contained in our Validator type.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">failedValidationResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span> <span class="nx">errors</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">string</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusUnprocessableEntity</span><span class="p">,</span> <span class="nx">errors</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>بعد از انجام این کار، به <code>createMovieHandler</code> برگردید و آن را به‌روزرسانی کنید تا validation checkهای لازم را روی struct مربوط به <code>input</code> انجام دهد. به این شکل:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span><span class="p">)</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">createMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>   <span class="kt">string</span>       <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+        <span class="nx">Year</span>    <span class="kt">int32</span>        <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+        <span class="nx">Runtime</span> <span class="nx">data</span><span class="p">.</span><span class="nx">Runtime</span> <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span>
+        <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span>     <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">badRequestResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Initialize a new Validator instance.
+</span><span class="c1"></span>    <span class="nx">v</span> <span class="o">:=</span> <span class="nx">validator</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Use the Check() method to execute our validation checks. This will add the 
+</span><span class="c1"></span>    <span class="c1">// provided key and error message to the errors map if the check does not evaluate 
+</span><span class="c1"></span>    <span class="c1">// to true. For example, in the first line here we &#34;check that the title is not 
+</span><span class="c1"></span>    <span class="c1">// equal to the empty string&#34;. In the second, we &#34;check that the length of the title
+</span><span class="c1"></span>    <span class="c1">// is less than or equal to 500 bytes&#34; and so on.
+</span><span class="c1"></span>    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Title</span> <span class="o">!=</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Title</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">500</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;must not be more than 500 bytes long&#34;</span><span class="p">)</span>
+
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Year</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Year</span> <span class="o">&gt;=</span> <span class="mi">1888</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;must be greater than 1888&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Year</span> <span class="o">&lt;=</span> <span class="nb">int32</span><span class="p">(</span><span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Year</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;must not be in the future&#34;</span><span class="p">)</span>
+
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Runtime</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;runtime&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Runtime</span> <span class="p">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;runtime&#34;</span><span class="p">,</span> <span class="s">&#34;must be a positive integer&#34;</span><span class="p">)</span>
+
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span> <span class="o">!=</span> <span class="kc">nil</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must contain at least 1 genre&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must not contain more than 5 genres&#34;</span><span class="p">)</span>
+    <span class="c1">// Note that we&#39;re using the Unique helper in the line below to check that all 
+</span><span class="c1"></span>    <span class="c1">// values in the input.Genres slice are unique.
+</span><span class="c1"></span>    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">validator</span><span class="p">.</span><span class="nf">Unique</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must not contain duplicate values&#34;</span><span class="p">)</span>
+
+    <span class="c1">// Use the Valid() method to see if any of the checks failed. If they did, then use
+</span><span class="c1"></span>    <span class="c1">// the failedValidationResponse() helper to send a response to the client, passing 
+</span><span class="c1"></span>    <span class="c1">// in the v.Errors map.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="p">!</span><span class="nx">v</span><span class="p">.</span><span class="nf">Valid</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">failedValidationResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>با انجام این تغییرات، آماده‌ایم این را امتحان کنیم. API را دوباره راه‌اندازی کنید و بعد یک request شامل داده نامعتبر به endpoint مربوط به <code>POST /v1/movies</code> بفرستید. شبیه این:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;title&#34;:&#34;&#34;,&#34;year&#34;:1000,&#34;runtime&#34;:&#34;-123 mins&#34;,&#34;genres&#34;:[&#34;sci-fi&#34;,&#34;sci-fi&#34;]}&#39;
+$ curl -i -d &#34;$BODY&#34; localhost:4000/v1/movies
+<samp>HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/json
+Date: Wed, 07 Apr 2021 10:33:57 GMT
+Content-Length: 180
+
+{
+    &#34;error&#34;: {
+        &#34;genres&#34;: &#34;must not contain duplicate values&#34;,
+        &#34;runtime&#34;: &#34;must be a positive integer&#34;,
+        &#34;title&#34;: &#34;must be provided&#34;,
+        &#34;year&#34;: &#34;must be greater than 1888&#34;
+    }
+}</samp></pre>
+</figure>
+
+<p>خیلی خوب به نظر می‌رسد. validation checkهای ما کار می‌کنند و جلوی اجرای موفق request را می‌گیرند؛ و حتی بهتر اینکه client برای هر مشکل، یک پاسخ JSON خوش‌ساخت با پیام‌های خطای روشن و informative دریافت می‌کند.</p>
+
+<p>اگر دوست دارید می‌توانید یک request معتبر هم بفرستید. باید ببینید که checkها با موفقیت pass می‌شوند و struct مربوط به <code>input</code> مثل قبل در پاسخ HTTP dump می‌شود:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;title&#34;:&#34;Moana&#34;,&#34;year&#34;:2016,&#34;runtime&#34;:&#34;107 mins&#34;,&#34;genres&#34;:[&#34;animation&#34;,&#34;adventure&#34;]}&#39;
+$ curl -i -d &#34;$BODY&#34; localhost:4000/v1/movies
+<samp>HTTP/1.1 200 OK
+Date: Wed, 07 Apr 2021 10:35:40 GMT
+Content-Length: 65
+Content-Type: text/plain; charset=utf-8
+
+{Title:Moana Year:2016 Runtime:107 Genres:[animation adventure]}</samp></pre>
+</figure>
+
+<h3 id="making-validation-rules-reusable">قابل استفاده مجدد کردن ruleهای validation</h3>
+
+<p>در پروژه‌های بزرگ، احتمالا می‌خواهید بعضی از validation checkهای مشابه را در چند جای مختلف reuse کنید. در مورد ما، برای مثال، بعدا وقتی یک client داده فیلم را <em>ویرایش</em> می‌کند، می‌خواهیم بسیاری از همین checkها را دوباره استفاده کنیم.</p>
+
+<p>برای جلوگیری از duplication، می‌توانیم validation checkهای مربوط به یک فیلم را داخل یک function مستقل به نام <code>ValidateMovie()</code> جمع کنیم. از نظر تئوری این function تقریبا می‌تواند هر جایی در codebase ما زندگی کند؛ کنار handlerها در فایل <code>cmd/api/movies.go</code>، یا احتمالا در پکیج <code>internal/validators</code>. اما شخصا دوست دارم validation checkها را نزدیک domain type مرتبط، یعنی در پکیج <code>internal/data</code> نگه دارم.</p>
+
+<p>اگر همراه کتاب جلو می‌روید، فایل <code>internal/data/movies.go</code> را دوباره باز کنید و یک function به نام <code>ValidateMovie()</code> شامل این checkها اضافه کنید، به این شکل:</p>
+
+<figure class="code go">
+<figcaption>File: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span><span class="p">)</span>
+
+<span class="kd">type</span> <span class="nx">Movie</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">ID</span>        <span class="kt">int64</span>     <span class="s">`</span><span class="s">json:&#34;id&#34;</span><span class="s">`</span>
+    <span class="nx">CreatedAt</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Time</span> <span class="s">`</span><span class="s">json:&#34;-&#34;</span><span class="s">`</span>
+    <span class="nx">Title</span>     <span class="kt">string</span>    <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+    <span class="nx">Year</span>      <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;year,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">Runtime</span>   <span class="nx">Runtime</span>   <span class="s">`</span><span class="s">json:&#34;runtime,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">Genres</span>    <span class="p">[</span><span class="p">]</span><span class="kt">string</span>  <span class="s">`</span><span class="s">json:&#34;genres,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">Version</span>   <span class="kt">int32</span>     <span class="s">`</span><span class="s">json:&#34;version&#34;</span><span class="s">`</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nf">ValidateMovie</span><span class="p">(</span><span class="nx">v</span> <span class="o">*</span><span class="nx">validator</span><span class="p">.</span><span class="nx">Validator</span><span class="p">,</span> <span class="nx">movie</span> <span class="o">*</span><span class="nx">Movie</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span> <span class="o">!=</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">500</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;must not be more than 500 bytes long&#34;</span><span class="p">)</span>
+
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span> <span class="o">&gt;=</span> <span class="mi">1888</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;must be greater than 1888&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span> <span class="o">&lt;=</span> <span class="nb">int32</span><span class="p">(</span><span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Year</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;must not be in the future&#34;</span><span class="p">)</span>
+
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;runtime&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span> <span class="p">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;runtime&#34;</span><span class="p">,</span> <span class="s">&#34;must be a positive integer&#34;</span><span class="p">)</span>
+
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span> <span class="o">!=</span> <span class="kc">nil</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must be provided&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must contain at least 1 genre&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="mi">5</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must not contain more than 5 genres&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">validator</span><span class="p">.</span><span class="nf">Unique</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="s">&#34;must not contain duplicate values&#34;</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<aside class="important"><p>
+<strong>مهم:</strong> دقت کنید که validation checkها حالا <em>روی یک struct از نوع <code>Movie</code></em> انجام می‌شوند، نه روی struct مربوط به <code>input</code> در handlerهای ما.
+</p></aside>
+
+<p>وقتی این کار انجام شد، باید به <code>createMovieHandler</code> برگردیم و آن را به‌روزرسانی کنیم تا یک struct جدید از نوع <code>Movie</code> initialize کند، داده را از struct مربوط به <code>input</code> داخل آن کپی کند، و بعد این validation function جدید را صدا بزند. به این شکل:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">createMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>   <span class="kt">string</span>       <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+        <span class="nx">Year</span>    <span class="kt">int32</span>        <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+        <span class="nx">Runtime</span> <span class="nx">data</span><span class="p">.</span><span class="nx">Runtime</span> <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span>
+        <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span>     <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">badRequestResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Copy the values from the input struct to a new Movie struct.
+</span><span class="c1"></span>    <span class="nx">movie</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="nx">data</span><span class="p">.</span><span class="nx">Movie</span><span class="p">{</span>
+        <span class="nx">Title</span><span class="p">:</span>   <span class="nx">input</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span>
+        <span class="nx">Year</span><span class="p">:</span>    <span class="nx">input</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span>
+        <span class="nx">Runtime</span><span class="p">:</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span>
+        <span class="nx">Genres</span><span class="p">:</span>  <span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Initialize a new Validator.
+</span><span class="c1"></span>    <span class="nx">v</span> <span class="o">:=</span> <span class="nx">validator</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Call the ValidateMovie() function, and if any checks fail, return a response 
+</span><span class="c1"></span>    <span class="c1">// containing the errors.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nf">ValidateMovie</span><span class="p">(</span><span class="nx">v</span><span class="p">,</span> <span class="nx">movie</span><span class="p">)</span><span class="p">;</span> <span class="p">!</span><span class="nx">v</span><span class="p">.</span><span class="nf">Valid</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">failedValidationResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>وقتی به این کد نگاه می‌کنید، ممکن است چند سوال در ذهنتان شکل بگیرد.</p>
+
+<p>اول، شاید بپرسید چرا instance مربوط به <code>Validator</code> را در handler initialize می‌کنیم و آن را به function مربوط به <code>ValidateMovie()</code> پاس می‌دهیم، به جای اینکه داخل <code>ValidateMovie()</code> initialize شود و به عنوان return value برگردد.</p>
+
+<p>دلیلش این است که با پیچیده‌تر شدن application، لازم می‌شود از handlerهایمان <em>چند</em> validation helper را صدا بزنیم، نه فقط یکی مثل همین مثال بالا. بنابراین initialize کردن <code>Validator</code> در handler و بعد پاس دادن آن به جاهای مختلف، flexibility بیشتری به ما می‌دهد.</p>
+
+<p>همچنین شاید بپرسید چرا JSON request را داخل struct مربوط به <code>input</code> decode می‌کنیم و بعد داده را کپی می‌کنیم، به جای اینکه مستقیما داخل struct مربوط به <code>Movie</code> decode کنیم.</p>
+
+<p>مشکل decode مستقیم داخل struct مربوط به <code>Movie</code> این است که client می‌تواند keyهای <code>id</code> و <code>version</code> را در JSON request خودش ارائه کند، و مقدارهای متناظر <em>بدون هیچ خطایی</em> داخل fieldهای <code>ID</code> و <code>Version</code> در struct مربوط به <code>Movie</code> decode می‌شوند؛ با اینکه نمی‌خواهیم این اتفاق بیفتد. <em>می‌توانیم</em> بعدا fieldهای لازم را در struct مربوط به <code>Movie</code> بررسی کنیم تا مطمئن شویم خالی هستند، اما این کمی hacky به نظر می‌رسد، و decode کردن داخل یک struct واسط، مثل کاری که در handler انجام می‌دهیم، رویکردی تمیزتر، ساده‌تر و robustتر است؛ هرچند کمی verboseتر.</p>
+
+<p>خب، با این توضیحات، باید بتوانید application را دوباره start کنید و از دید client همه چیز مثل قبل کار کند. اگر یک request نامعتبر بفرستید، باید پاسخی شامل پیام‌های خطا شبیه این بگیرید:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;title&#34;:&#34;&#34;,&#34;year&#34;:1000,&#34;runtime&#34;:&#34;-123 mins&#34;,&#34;genres&#34;:[&#34;sci-fi&#34;,&#34;sci-fi&#34;]}&#39;
+$ curl -i -d &#34;$BODY&#34; localhost:4000/v1/movies
+<samp>HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/json
+Date: Wed, 07 Apr 2021 10:51:00 GMT
+Content-Length: 180
+
+{
+    &#34;error&#34;: {
+        &#34;genres&#34;: &#34;must not contain duplicate values&#34;,
+        &#34;runtime&#34;: &#34;must be a positive integer&#34;,
+        &#34;title&#34;: &#34;must be provided&#34;,
+        &#34;year&#34;: &#34;must be greater than 1888&#34;
+    }
+}</samp></pre>
+</figure>
+
+<p>با خیال راحت با این بخش بازی کنید و مقدارهای مختلفی در JSON بفرستید تا مطمئن شوید همه validation checkها همان‌طور که انتظار دارید کار می‌کنند.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="04.04-custom-json-decoding.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="05.00-database-setup-and-configuration.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "04.04-custom-json-decoding.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "05.00-database-setup-and-configuration.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

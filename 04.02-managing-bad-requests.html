@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>مدیریت درخواست‌های بد &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="04.00-parsing-json-requests.html">parse کردن درخواست‌های JSON</a> &rsaquo; مدیریت درخواست‌های بد</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="04.01-json-decoding.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="04.03-restricting-inputs.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۴.۲.</div>
+			<h2 id="managing-bad-requests">مدیریت درخواست‌های بد</h2>
+
+<p>حالا <code>createMovieHandler</code> وقتی یک JSON request body معتبر با داده مناسب دریافت می‌کند خوب کار می‌کند. اما در این نقطه شاید برایتان سوال شود:</p>
+
+<ul>
+<li>اگر client چیزی بفرستد که JSON نیست، مثل XML یا چند byte تصادفی، چه می‌شود؟</li>
+<li>اگر JSON malformed باشد یا خطا داشته باشد چه اتفاقی می‌افتد؟</li>
+<li>اگر typeهای JSON با typeهایی که می‌خواهیم داخلشان decode کنیم match نباشند چه؟</li>
+<li>اگر request اصلا body نداشته باشد چه؟</li>
+</ul>
+
+<p>خب&hellip; بیایید ببینیم!</p>
+
+<figure class="code bash">
+<pre><samp># Send some XML as the request body</samp>
+$ curl -d &#39;&lt;?xml version=&#34;1.0&#34; encoding=&#34;UTF-8&#34;?&gt;&lt;note&gt;&lt;to&gt;Alice&lt;/to&gt;&lt;/note&gt;&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;invalid character &#39;\u003c&#39; looking for beginning of value&#34;
+}</samp>
+
+<samp># Send some malformed JSON (notice the trailing comma)</samp>
+$ curl -d &#39;{&#34;title&#34;: &#34;Moana&#34;, }&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;invalid character &#39;}&#39; looking for beginning of object key string&#34;
+}</samp>
+
+<samp># Send a JSON array instead of an object</samp>
+$ curl -d &#39;[&#34;foo&#34;, &#34;bar&#34;]&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;json: cannot unmarshal array into Go value of type struct { Title string 
+    \&#34;json:\\\&#34;title\\\&#34;\&#34;; Year int32 \&#34;json:\\\&#34;year\\\&#34;\&#34;; Runtime int32 \&#34;json:\\
+    \&#34;runtime\\\&#34;\&#34;; Genres []string \&#34;json:\\\&#34;genres\\\&#34;\&#34; }&#34;
+}</samp>
+
+<samp># Send a numeric &#39;title&#39; value (instead of string)</samp>
+$ curl -d &#39;{&#34;title&#34;: 123}&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;json: cannot unmarshal number into Go struct field .title of type string&#34;
+}</samp>
+
+<samp># Send an empty request body</samp>
+$ curl -X POST localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;EOF&#34;
+}</samp></pre>
+</figure>
+
+<p>در همه این حالت‌ها می‌بینیم که <code>createMovieHandler</code> کار درست را انجام می‌دهد. وقتی یک request نامعتبر دریافت می‌کند که نمی‌تواند داخل struct مربوط به <code>input</code> decode شود، پردازش بیشتری انجام نمی‌شود و یک پاسخ JSON برای client ارسال می‌شود که شامل پیام خطای برگشتی از متد <code>Decode()</code> است.</p>
+
+<p>برای یک API خصوصی که قرار نیست عموم مردم از آن استفاده کنند، این رفتار احتمالا قابل قبول است و لازم نیست کار دیگری انجام دهید.</p>
+
+<p>اما برای یک API عمومی، خود پیام‌های خطا ایدئال نیستند. بعضی بیش از حد جزئیات دارند و اطلاعاتی درباره پیاده‌سازی زیرین API افشا می‌کنند. بعضی دیگر به اندازه کافی توصیفی نیستند، مثل <code>&quot;EOF&quot;</code>، و بعضی هم واقعا گیج‌کننده و سخت‌فهم هستند. از نظر formatting و زبان استفاده‌شده هم consistency وجود ندارد.</p>
+
+<p>برای بهتر کردن این وضعیت، توضیح می‌دهیم چطور <em>خطاهای</em> برگشتی از <code>Decode()</code> را triage کنیم و آن‌ها را با پیام‌های خطای روشن‌تر و قابل اقدام‌تر جایگزین کنیم، تا به client کمک کنیم دقیقا بفهمد مشکل JSON او چیست.</p>
+
+<h3 id="triaging-the-decode-error">triage کردن خطای Decode</h3>
+
+<p>در این نقطه از ساخت application، متد <code>Decode()</code> ممکن است این پنج نوع خطا را برگرداند:</p>
+
+<table>
+<thead>
+<tr>
+<th>دلیل</th>
+<th>خطا</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>There is a syntax problem with the JSON being decoded.</td>
+<td><a href="https://golang.org/pkg/encoding/json/#SyntaxError"><code>json.SyntaxError</code></a> و <br/><a href="https://golang.org/pkg/io/#pkg-variables"><code>io.ErrUnexpectedEOF</code></a></td>
+</tr>
+
+<tr>
+<td>یک مقدار JSON برای type مقصد در Go مناسب نیست.</td>
+<td><a href="https://golang.org/pkg/encoding/json/#UnmarshalTypeError"><code>json.UnmarshalTypeError</code></a></td>
+</tr>
+
+<tr>
+<td>مقصد decode معتبر نیست؛ معمولا چون pointer نیست. این در واقع مشکل کد application ماست، نه خود JSON.</td>
+<td><a href="https://golang.org/pkg/encoding/json/#InvalidUnmarshalError"><code>json.InvalidUnmarshalError</code></a></td>
+</tr>
+
+<tr>
+<td>JSONای که decode می‌شود خالی است.</td>
+<td><a href="https://golang.org/pkg/io/#pkg-variables"><code>io.EOF</code></a></td>
+</tr>
+</tbody>
+</table>
+<p>triage کردن این خطاهای احتمالی، که می‌توانیم با functionهای <a href="https://golang.org/pkg/errors/#Is"><code>errors.Is()</code></a> و <a href="https://golang.org/pkg/errors/#As"><code>errors.As()</code></a> در Go انجامش دهیم، کد داخل <code>createMovieHandler</code> را <em>خیلی</em> طولانی‌تر و پیچیده‌تر می‌کند. این logic چیزی است که باید در handlerهای دیگر پروژه هم duplicate کنیم.</p>
+
+<p>پس برای کمک به این موضوع، یک helper جدید به نام <code>readJSON()</code> در فایل <code>cmd/api/helpers.go</code> می‌سازیم. در این helper، JSON را طبق معمول از request body decode می‌کنیم، بعد خطاها را triage می‌کنیم و در صورت نیاز با پیام‌های سفارشی خودمان جایگزینشان می‌کنیم.</p>
+
+<p>اگر همراه کتاب کدنویسی می‌کنید، کد زیر را به فایل <code>cmd/api/helpers.go</code> اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/helpers.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;encoding/json&#34;</span>
+    <span class="s">&#34;errors&#34;</span>
+    <span class="s">&#34;fmt&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;io&#34;</span>  <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;net/http&#34;</span>
+    <span class="s">&#34;strconv&#34;</span>
+
+    <span class="s">&#34;github.com/julienschmidt/httprouter&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">readJSON</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span> <span class="nx">dst</span> <span class="nx">any</span><span class="p">)</span> <span class="kt">error</span> <span class="p">{</span>
+    <span class="c1">// Decode the request body into the target destination. 
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nx">Body</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="nx">dst</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="c1">// If there is an error during decoding, start the triage...
+</span><span class="c1"></span>        <span class="kd">var</span> <span class="nx">syntaxError</span> <span class="o">*</span><span class="nx">json</span><span class="p">.</span><span class="nx">SyntaxError</span>
+        <span class="kd">var</span> <span class="nx">unmarshalTypeError</span> <span class="o">*</span><span class="nx">json</span><span class="p">.</span><span class="nx">UnmarshalTypeError</span>
+        <span class="kd">var</span> <span class="nx">invalidUnmarshalError</span> <span class="o">*</span><span class="nx">json</span><span class="p">.</span><span class="nx">InvalidUnmarshalError</span>
+
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="c1">// Use the errors.As() function to check whether the error has the type 
+</span><span class="c1"></span>        <span class="c1">// *json.SyntaxError. If it does, then return a plain-english error message 
+</span><span class="c1"></span>        <span class="c1">// which includes the location of the problem.
+</span><span class="c1"></span>        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">As</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">syntaxError</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;body contains badly-formed JSON (at character %d)&#34;</span><span class="p">,</span> <span class="nx">syntaxError</span><span class="p">.</span><span class="nx">Offset</span><span class="p">)</span>
+
+        <span class="c1">// In some circumstances Decode() may also return an io.ErrUnexpectedEOF error
+</span><span class="c1"></span>        <span class="c1">// for syntax errors in the JSON. So we check for this using errors.Is() and
+</span><span class="c1"></span>        <span class="c1">// return a generic error message. There is an open issue regarding this at
+</span><span class="c1"></span>        <span class="c1">// https://github.com/golang/go/issues/25956.
+</span><span class="c1"></span>        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">io</span><span class="p">.</span><span class="nx">ErrUnexpectedEOF</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="s">&#34;body contains badly-formed JSON&#34;</span><span class="p">)</span>
+
+        <span class="c1">// Likewise, catch any json.UnmarshalTypeError errors. These occur when the
+</span><span class="c1"></span>        <span class="c1">// JSON value is the wrong type for the target destination. If the error relates
+</span><span class="c1"></span>        <span class="c1">// to a specific field, then we include that in our error message to make it 
+</span><span class="c1"></span>        <span class="c1">// easier for the client to debug.
+</span><span class="c1"></span>        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">As</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">unmarshalTypeError</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nx">unmarshalTypeError</span><span class="p">.</span><span class="nx">Field</span> <span class="o">!=</span> <span class="s">&#34;&#34;</span> <span class="p">{</span>
+                <span class="k">return</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;body contains incorrect JSON type for field %q&#34;</span><span class="p">,</span> <span class="nx">unmarshalTypeError</span><span class="p">.</span><span class="nx">Field</span><span class="p">)</span>
+            <span class="p">}</span>
+            <span class="k">return</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Errorf</span><span class="p">(</span><span class="s">&#34;body contains incorrect JSON type (at character %d)&#34;</span><span class="p">,</span> <span class="nx">unmarshalTypeError</span><span class="p">.</span><span class="nx">Offset</span><span class="p">)</span>
+
+        <span class="c1">// An io.EOF error will be returned by Decode() if the request body is empty. We
+</span><span class="c1"></span>        <span class="c1">// check for this with errors.Is() and return a plain-english error message 
+</span><span class="c1"></span>        <span class="c1">// instead.
+</span><span class="c1"></span>        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">io</span><span class="p">.</span><span class="nx">EOF</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="s">&#34;body must not be empty&#34;</span><span class="p">)</span>
+
+        <span class="c1">// A json.InvalidUnmarshalError error will be returned if we pass something 
+</span><span class="c1"></span>        <span class="c1">// that is not a non-nil pointer as the target destination to Decode(). If this 
+</span><span class="c1"></span>        <span class="c1">// happens we panic, rather than returning an error to our handler. At the end of 
+</span><span class="c1"></span>        <span class="c1">// this chapter we&#39;ll briefly discuss why panicking is an appropriate thing to do 
+</span><span class="c1"></span>        <span class="c1">// in this specific situation.
+</span><span class="c1"></span>        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">As</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">invalidUnmarshalError</span><span class="p">)</span><span class="p">:</span>
+            <span class="nb">panic</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+
+        <span class="c1">// For any other error, return it as-is.
+</span><span class="c1"></span>        <span class="k">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nx">err</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="kc">nil</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>حالا که این helper جدید آماده است، برگردیم به فایل <code>cmd/api/movies.go</code> و <code>createMovieHandler</code> را به‌روزرسانی کنیم تا از آن استفاده کند. به این شکل:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">createMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>   <span class="kt">string</span>   <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+        <span class="nx">Year</span>    <span class="kt">int32</span>    <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+        <span class="nx">Runtime</span> <span class="kt">int32</span>    <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span>
+        <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span> <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Use the new readJSON() helper to decode the request body into the input struct. 
+</span><span class="c1"></span>    <span class="c1">// If this returns an error we send the client the error message along with a 400
+</span><span class="c1"></span>    <span class="c1">// Bad Request status code, just like before.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusBadRequest</span><span class="p">,</span> <span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>API را دوباره راه‌اندازی کنید و بعد با تکرار همان bad requestهایی که در ابتدای فصل فرستادیم، این را امتحان کنید. حالا باید پیام‌های خطای جدید و سفارشی‌شده‌ای شبیه این ببینید:</p>
+
+<figure class="code bash">
+<pre><samp># Send some XML as the request body</samp>
+$ curl -d &#39;&lt;?xml version=&#34;1.0&#34; encoding=&#34;UTF-8&#34;?&gt;&lt;note&gt;&lt;to&gt;Alex&lt;/to&gt;&lt;/note&gt;&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;body contains badly-formed JSON (at character 1)&#34;
+}</samp>
+
+<samp># Send some malformed JSON (notice the trailing comma)</samp>
+$ curl -d &#39;{&#34;title&#34;: &#34;Moana&#34;, }&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;body contains badly-formed JSON (at character 20)&#34;
+}</samp>
+
+<samp># Send a JSON array instead of an object</samp>
+$ curl -d &#39;[&#34;foo&#34;, &#34;bar&#34;]&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;body contains incorrect JSON type (at character 1)&#34;
+}</samp>
+
+<samp># Send a numeric &#39;title&#39; value (instead of string)</samp>
+$ curl -d &#39;{&#34;title&#34;: 123}&#39; localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;body contains incorrect JSON type for \&#34;title\&#34;&#34;
+}</samp>
+
+<samp># Send an empty request body</samp>
+$ curl -X POST localhost:4000/v1/movies
+<samp>{
+    &#34;error&#34;: &#34;body must not be empty&#34;
+}</samp></pre>
+</figure>
+
+<p>خیلی بهتر شده‌اند. پیام‌های خطا حالا ساده‌تر، روشن‌تر و از نظر formatting سازگارتر هستند، و علاوه بر این هیچ اطلاعات غیرضروری درباره کد زیربنایی ما افشا نمی‌کنند.</p>
+
+<p>اگر دوست دارید با این بخش کمی بازی کنید و request bodyهای مختلف بفرستید تا ببینید handler چطور واکنش نشان می‌دهد.</p>
+
+<h3 id="making-a-bad-request-helper">ساخت helper برای bad request</h3>
+
+<p>در کد <code>createMovieHandler</code> بالا، از helper عمومی <code>app.errorResponse()</code> استفاده می‌کنیم تا یک پاسخ <code>400 Bad Request</code> همراه با پیام خطا برای client بفرستیم.</p>
+
+<p>بیایید سریع آن را با یک helper function تخصصی به نام <code>app.badRequestResponse()</code> جایگزین کنیم:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/errors.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">badRequestResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span> <span class="nx">err</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusBadRequest</span><span class="p">,</span> <span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<figure class="code go">
+<figcaption>File: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">createMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>   <span class="kt">string</span>   <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+        <span class="nx">Year</span>    <span class="kt">int32</span>    <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+        <span class="nx">Runtime</span> <span class="kt">int32</span>    <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span>
+        <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span> <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="c1">// Use the new badRequestResponse() helper.
+</span><span class="c1"></span>        <span class="nx">app</span><span class="p">.</span><span class="nf">badRequestResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span> 
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>این تغییر کوچک است، اما مفید است. هرچه application ما به‌تدریج پیچیده‌تر می‌شود، استفاده از helperهای تخصصی مثل این برای مدیریت انواع مختلف خطا کمک می‌کند مطمئن شویم پاسخ‌های خطای ما در همه endpointها سازگار باقی می‌مانند.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="panicking-vs-returning-errors">panic کردن در برابر return کردن خطا</h4>
+
+<p>موضوع panic کردن در برابر return کردن خطا چیزی است که در کتاب اول <em>Let&rsquo;s Go</em> درباره‌اش صحبت کردیم، و من یک آموزش مفصل هم درباره آن <a href="https://www.alexedwards.net/blog/when-is-it-ok-to-panic-in-go">اینجا</a> نوشته‌ام؛ اگر <em>Let&rsquo;s Go</em> را نخوانده‌اید، پیشنهاد می‌کنم آن را ببینید.</p>
+
+<p>پس نمی‌خواهم همان اطلاعات را دوباره تکرار کنم، جز اینکه بگویم تصمیم برای panic کردن در helper مربوط به <code>readJSON()</code> وقتی خطای <code>json.InvalidUnmarshalError</code> می‌گیریم، تصمیمی سرسری نیست. همان‌طور که احتمالا می‌دانید، در Go عموما best practice این است که errorها را return کنید و gracefully مدیریتشان کنید، نه اینکه panic کنید.</p>
+
+<p>تنها دلیلی که اینجا panic می‌کنیم این است که اگر در runtime یک <code>json.InvalidUnmarshalError</code> بگیریم، قطعا با یک <em>خطای غیرمنتظره برنامه‌نویس</em> روبه‌رو هستیم. این فقط زمانی رخ می‌دهد که ما به عنوان developer یک مقدار پشتیبانی‌نشده را به عنوان مقصد decode به <code>Decode()</code> پاس بدهیم. در عملکرد عادی <em>نباید</em> این خطا را ببینیم، و این چیزی است که باید مدت‌ها قبل از deployment در development و testها پیدا شود.</p>
+
+<p>و اگر به جای panic کردن، این error را return <em>می‌کردیم</em>، لازم بود در هر کدام از handlerهای API کد اضافه‌ای برای مدیریت آن وارد کنیم؛ چیزی که برای خطایی که بعید است هرگز در production ببینیم، trade-off خوبی به نظر نمی‌رسد.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="04.01-json-decoding.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="04.03-restricting-inputs.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "04.01-json-decoding.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "04.03-restricting-inputs.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
