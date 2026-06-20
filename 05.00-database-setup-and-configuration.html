@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی و پیکربندی database &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; راه‌اندازی و پیکربندی database</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="04.05-validating-json-input.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="05.01-setting-up-postgresql.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۵.</div>
+			<h1 id="database-setup-and-configuration">راه‌اندازی و پیکربندی database</h1>
+
+<p>در بخش بعدی کتاب، ساخت پروژه را جلوتر می‌بریم و یک SQL database راه‌اندازی می‌کنیم تا داده فیلم‌ها را به صورت persistent ذخیره کنیم.</p>
+
+<p>برخلاف کتاب اول <em>Let&rsquo;s Go</em> که در آن از MySQL به عنوان database استفاده کردیم، این بار از <a href="https://www.postgresql.org/">PostgreSQL</a> استفاده می‌کنیم. PostgreSQL متن‌باز، بسیار reliable و دارای چند feature مدرن و مفید است؛ از جمله پشتیبانی از data typeهای array و JSON، full-text search و queryهای geospatial. در طول ساخت پروژه، از چند مورد از این featureهای مدرن PostgreSQL استفاده خواهیم کرد.</p>
+
+<p>در این بخش یاد می‌گیرید:</p>
+
+<ul>
+<li><p>چطور PostgreSQL را روی ماشین local خود نصب و راه‌اندازی کنید.</p></li>
+
+<li><p>چطور از ابزار interactive یعنی <a href="https://www.postgresql.org/docs/current/app-psql.html"><code>psql</code></a> برای ساخت databaseها، extensionهای PostgreSQL و accountهای کاربری استفاده کنید.</p></li>
+
+<li><p>چطور یک database connection pool را در Go initialize کنید و settingهای آن را برای بهبود performance و stability پیکربندی کنید.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="04.05-validating-json-input.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="05.01-setting-up-postgresql.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "04.05-validating-json-input.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "05.01-setting-up-postgresql.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

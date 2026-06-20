@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>پیکربندی database connection pool &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="05.00-database-setup-and-configuration.html">راه‌اندازی و پیکربندی database</a> &rsaquo; پیکربندی database connection pool</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="05.02-connecting-to-postgresql.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="06.00-sql-migrations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۵.۳.</div>
+			<h2 id="configuring-the-database-connection-pool">پیکربندی database connection pool</h2>
+
+<p>در کتاب اول <em>Let&rsquo;s Go</em> درباره connection pool مربوط به <code>sql.DB</code> در سطح کلی صحبت کردیم و اصل‌های اصلی استفاده از آن را نشان دادیم. اما در این فصل عمیق‌تر می‌شویم؛ توضیح می‌دهیم connection pool پشت صحنه چطور کار می‌کند و settingهایی را بررسی می‌کنیم که می‌توانیم برای تغییر و بهینه‌سازی رفتار آن استفاده کنیم.</p>
+
+<aside class="note"><p>
+<strong>نکته:</strong> این فصل مقدار زیادی تئوری دارد و با اینکه جالب است، برای ساخت application <em>حیاتی</em> نیست. اگر احساس کردید سنگین است، می‌توانید فعلا آن را سریع مرور کنید و بعدا دوباره به آن برگردید.
+</p></aside>
+
+<p>پس connection pool مربوط به <code>sql.DB</code> واقعا چطور کار می‌کند؟</p>
+
+<p>مهم‌ترین چیزی که باید بفهمید این است که یک pool از نوع <code>sql.DB</code> شامل دو نوع connection است: connectionهای «in-use» و connectionهای «idle». وقتی از یک connection برای انجام یک database task استفاده می‌کنید، مثل اجرای یک SQL statement یا query گرفتن از rowها، آن connection به عنوان in-use علامت‌گذاری می‌شود؛ و وقتی task کامل شد، آن connection به عنوان idle علامت‌گذاری می‌شود.</p>
+
+<p>وقتی به Go دستور می‌دهید یک database task انجام دهد، ابتدا بررسی می‌کند آیا connection idleای در pool موجود است یا نه. اگر موجود باشد، Go همان connection موجود را reuse می‌کند و برای مدت انجام task آن را به عنوان in-use علامت‌گذاری می‌کند. اگر زمانی که به connection نیاز دارید هیچ connection idleای در pool وجود نداشته باشد، Go یک connection جدید اضافه ایجاد می‌کند.</p>
+
+<p>وقتی Go یک connection idle را از pool reuse می‌کند، هر مشکلی در connection به شکل graceful مدیریت می‌شود. connectionهای بد قبل از تسلیم شدن، به صورت خودکار دو بار retry می‌شوند؛ در آن نقطه Go connection بد را از pool حذف می‌کند و برای انجام task یک connection جدید می‌سازد.</p>
+
+<h3 id="configuring-the-pool">پیکربندی pool</h3>
+
+<p>connection pool چهار method دارد که می‌توانیم برای پیکربندی رفتار آن استفاده کنیم. بیایید آن‌ها را یکی‌یکی بررسی کنیم.</p>
+
+<h4 id="the-setmaxopenconns-method">متد SetMaxOpenConns</h4>
+
+<p>متد <a href="https://golang.org/pkg/database/sql/#DB.SetMaxOpenConns"><code>SetMaxOpenConns()</code></a> اجازه می‌دهد یک حد بالای <code>MaxOpenConns</code> برای تعداد connectionهای «open» در pool تنظیم کنید؛ یعنی connectionهای in-use به علاوه idle. به صورت پیش‌فرض، تعداد connectionهای open نامحدود است.</p>
+
+<aside class="important"><p>
+<strong>مهم:</strong> توجه کنید که connectionهای «open» برابر با connectionهای «in-use» به علاوه «idle» هستند؛ <em>فقط</em> connectionهای «in-use» نیستند.
+</p></aside>
+
+<p>به طور کلی، هرچه limit مربوط به <code>MaxOpenConns</code> را بالاتر بگذارید، queryهای database بیشتری می‌توانند به صورت concurrent اجرا شوند و ریسک اینکه <em>خود connection pool</em> به bottleneck در application شما تبدیل شود کمتر می‌شود.</p>
+
+<p>اما نامحدود گذاشتن آن لزوما بهترین کار نیست. PostgreSQL به صورت پیش‌فرض یک hard limit برابر با ۱۰۰ connection open دارد، و اگر در load سنگین به این hard limit برسیم، باعث می‌شود driver مربوط به <code>pq</code> خطای <code>&quot;sorry, too many clients already&quot;</code> برگرداند.</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> hard limit مربوط به connectionهای open را می‌توان با استفاده از setting مربوط به <code>max_connections</code> در فایل <code>postgresql.conf</code> تغییر داد.
+</p></aside>
+
+<p>برای جلوگیری از این error، منطقی است تعداد connectionهای open در pool را با فاصله‌ای مناسب پایین‌تر از ۱۰۰ محدود کنیم، تا برای applicationها یا sessionهای دیگری که نیاز دارند از PostgreSQL استفاده کنند هم headroom کافی باقی بماند.</p>
+
+<p>مزیت دیگر تنظیم limit برای <code>MaxOpenConns</code> این است که مثل یک throttle بسیار ساده عمل می‌کند و جلوی این را می‌گیرد که database هم‌زمان با تعداد زیادی task غرق شود.</p>
+
+<p>اما تنظیم limit یک caveat مهم دارد. اگر به limit مربوط به <code>MaxOpenConns</code> برسیم و همه connectionها in-use باشند، هر database task بعدی مجبور می‌شود صبر کند تا یک connection آزاد و به عنوان idle علامت‌گذاری شود. در context API ما، HTTP request کاربر ممکن است هنگام انتظار برای connection آزاد، نامحدود «hang» کند. پس برای کاهش این ریسک، مهم است همیشه روی database taskها با استفاده از type مربوط به <code>context.Context</code> timeout تنظیم کنیم. بعدا در کتاب توضیح می‌دهیم چطور این کار را انجام دهید.</p>
+
+<h4 id="the-setmaxidleconns-method">متد SetMaxIdleConns</h4>
+
+<p>متد <a href="https://golang.org/pkg/database/sql/#DB.SetMaxIdleConns"><code>SetMaxIdleConns()</code></a> یک حد بالای <code>MaxIdleConns</code> برای تعداد connectionهای idle در pool تنظیم می‌کند. به صورت پیش‌فرض، حداکثر تعداد connectionهای idle برابر با ۲ است.</p>
+
+<p>در تئوری، اجازه دادن به تعداد بیشتری connection idle در pool باعث بهبود performance می‌شود، چون احتمال اینکه لازم باشد یک connection جدید از صفر ایجاد شود کمتر می‌شود و بنابراین به صرفه‌جویی در resourceها کمک می‌کند.</p>
+
+<p>اما مهم است بدانید زنده نگه داشتن یک connection idle هزینه دارد. memory مصرف می‌کند که در غیر این صورت می‌توانست برای application و database شما استفاده شود، و همچنین ممکن است اگر یک connection برای مدت طولانی idle بماند، unusable شود. برای مثال، MySQL به صورت پیش‌فرض هر connectionای را که ۸ ساعت استفاده نشده باشد به صورت خودکار close می‌کند.</p>
+
+<p>پس ممکن است تنظیم بیش از حد بالای <code>MaxIdleConns</code> باعث شود connectionهای بیشتری unusable شوند و resourceهای بیشتری نسبت به یک idle connection pool کوچک‌تر مصرف شود؛ poolای با connectionهای کمتر که بیشتر استفاده می‌شوند. به عنوان guideline: <em>فقط وقتی می‌خواهید یک connection را idle نگه دارید که احتمالا به‌زودی دوباره از آن استفاده می‌کنید</em>.</p>
+
+<p>نکته دیگری که باید اشاره کنیم این است که limit مربوط به <code>MaxIdleConns</code> همیشه باید کمتر یا مساوی <code>MaxOpenConns</code> باشد. Go این را enforce می‌کند و در صورت نیاز limit مربوط به <code>MaxIdleConns</code> را به صورت خودکار کاهش می‌دهد.</p>
+
+<h4 id="the-setconnmaxlifetime-method">متد SetConnMaxLifetime</h4>
+
+<p>متد <a href="https://golang.org/pkg/database/sql/#DB.SetConnMaxLifetime"><code>SetConnMaxLifetime()</code></a> limit مربوط به <code>ConnMaxLifetime</code> را تنظیم می‌کند؛ یعنی حداکثر مدت زمانی که یک connection می‌تواند reuse شود. به صورت پیش‌فرض، maximum lifetime وجود ندارد و connectionها برای همیشه reuse می‌شوند.</p>
+
+<p>اگر مثلا <code>ConnMaxLifetime</code> را روی یک ساعت تنظیم کنیم، یعنی همه connectionها یک ساعت بعد از اولین ایجادشان به عنوان «expired» علامت‌گذاری می‌شوند و بعد از expired شدن دیگر نمی‌توانند reuse شوند. اما توجه کنید:</p>
+
+<ul>
+<li>این تضمین نمی‌کند که یک connection حتما یک ساعت کامل در pool وجود داشته باشد؛ ممکن است یک connection به هر دلیلی unusable شود و قبل از آن به صورت خودکار close شود.</li>
+<li>یک connection همچنان می‌تواند بیش از یک ساعت بعد از ایجاد شدن در حال استفاده باشد؛ فقط بعد از آن زمان نمی‌تواند reuse شدن را <em>شروع</em> کند.</li>
+<li>این idle timeout نیست. connection یک ساعت بعد از اولین ایجاد شدن expired می‌شود؛ نه یک ساعت بعد از آخرین باری که idle شده است.</li>
+<li>Go هر ثانیه یک بار یک عملیات cleanup در background اجرا می‌کند تا connectionهای expired را از pool حذف کند.</li>
+</ul>
+
+<p>در تئوری، نامحدود گذاشتن <code>ConnMaxLifetime</code> یا تنظیم lifetime طولانی به performance کمک می‌کند، چون احتمال اینکه لازم باشد connectionهای جدید از صفر ساخته شوند کمتر می‌شود. اما در بعضی وضعیت‌ها enforce کردن lifetime کوتاه‌تر می‌تواند مفید باشد. برای مثال:</p>
+
+<ul>
+<li>اگر SQL database شما maximum lifetime روی connectionها enforce می‌کند، منطقی است <code>ConnMaxLifetime</code> را کمی کوتاه‌تر تنظیم کنید.</li>
+<li>برای کمک به تعویض graceful databaseها پشت یک load balancer.</li>
+</ul>
+
+<p>اگر تصمیم گرفتید روی pool خود <code>ConnMaxLifetime</code> تنظیم کنید، مهم است frequencyای را که connectionها در آن expired و بعد دوباره ساخته می‌شوند در نظر داشته باشید. برای مثال، اگر ۱۰۰ connection open در pool داشته باشید و <code>ConnMaxLifetime</code> برابر با ۱ دقیقه باشد، application شما ممکن است به طور متوسط تا ۱.۶۷ connection را در هر ثانیه از بین ببرد و دوباره بسازد. نمی‌خواهید این frequency آن‌قدر زیاد باشد که در نهایت performance را مختل کند.</p>
+
+<h4 id="the-setconnmaxidletime-method">متد SetConnMaxIdleTime</h4>
+
+<p>متد <a href="https://golang.org/pkg/database/sql/#DB.SetConnMaxIdleTime"><code>SetConnMaxIdleTime()</code></a> limit مربوط به <code>ConnMaxIdleTime</code> را تنظیم می‌کند. این روش بسیار شبیه <code>ConnMaxLifetime</code> کار می‌کند، با این تفاوت که حداکثر مدت زمانی را تنظیم می‌کند که یک connection می‌تواند قبل از expired شدن <em>idle</em> بماند. به صورت پیش‌فرض limitای وجود ندارد.</p>
+
+<p>اگر مثلا <code>ConnMaxIdleTime</code> را روی ۱ ساعت تنظیم کنیم، هر connectionای که از آخرین استفاده به مدت ۱ ساعت در pool idle مانده باشد به عنوان expired علامت‌گذاری می‌شود و توسط عملیات cleanup در background حذف خواهد شد.</p>
+
+<p>این setting واقعا مفید است، چون یعنی می‌توانیم limit نسبتا بالایی برای تعداد connectionهای idle در pool تنظیم کنیم، اما به صورت دوره‌ای با حذف connectionهای idleای که می‌دانیم دیگر واقعا استفاده نمی‌شوند، resourceها را آزاد کنیم.</p>
+
+<h3 id="putting-it-into-practice">استفاده عملی</h3>
+
+<p>خب، این اطلاعات زیادی بود&hellip; اما در عمل چه معنی‌ای دارد؟ بیایید همه موارد بالا را در چند نکته قابل اقدام خلاصه کنیم.</p>
+
+<ol>
+<li><p>به عنوان rule of thumb، باید مقدار <code>MaxOpenConns</code> را به صورت صریح تنظیم کنید. این مقدار باید با فاصله مناسب پایین‌تر از هر hard limitی باشد که database و infrastructure شما روی تعداد connectionها اعمال می‌کنند، و شاید بخواهید آن را نسبتا پایین نگه دارید تا مثل یک throttle ساده عمل کند.</p>
+
+<p>برای این پروژه limit مربوط به <code>MaxOpenConns</code> را روی ۲۵ connection تنظیم می‌کنیم. من دیده‌ام که این مقدار برای web applicationها و APIهای کوچک تا متوسط نقطه شروع منطقی‌ای است، اما در حالت ایدئال باید بسته به نتایج benchmark و load test، این مقدار را برای سخت‌افزار خودتان تنظیم کنید.</p></li>
+
+<li><p>به طور کلی، مقدارهای بالاتر <code>MaxOpenConns</code> و <code>MaxIdleConns</code> باعث performance بهتر می‌شوند. اما بازدهی آن‌ها diminishing است، و باید بدانید داشتن idle connection pool بیش از حد بزرگ، با connectionهایی که زیاد reuse نمی‌شوند، در واقع می‌تواند باعث کاهش performance و مصرف غیرضروری resourceها شود.</p>
+
+<p>چون <code>MaxIdleConns</code> همیشه باید کمتر یا مساوی <code>MaxOpenConns</code> باشد، برای این پروژه <code>MaxIdleConns</code> را هم به ۲۵ connection محدود می‌کنیم.</p></li>
+
+<li><p>برای کاهش ریسک نکته ۲ بالا، معمولا باید یک مقدار <code>ConnMaxIdleTime</code> تنظیم کنید تا connectionهای idleای که مدت زیادی استفاده نشده‌اند حذف شوند. در این پروژه duration مربوط به <code>ConnMaxIdleTime</code> را روی ۱۵ دقیقه تنظیم می‌کنیم.</p></li>
+
+<li><p>احتمالا مشکلی ندارد که <code>ConnMaxLifetime</code> را نامحدود بگذارید، مگر اینکه database شما hard limitای روی lifetime connection اعمال کند، یا مشخصا برای چیزی مثل تعویض graceful databaseها به آن نیاز داشته باشید. هیچ‌کدام از این موارد در این پروژه صدق نمی‌کند، پس آن را روی setting پیش‌فرض نامحدود باقی می‌گذاریم.</p></li>
+</ol>
+
+<h3 id="configuring-the-connection-pool">پیکربندی connection pool</h3>
+
+<p>به جای hard-code کردن این settingها، فایل <code>cmd/api/main.go</code> را به‌روزرسانی می‌کنیم تا آن‌ها را به عنوان command-line flag بپذیرد.</p>
+
+<p>command-line flag مربوط به مقدار <code>ConnMaxIdleTime</code> به‌خصوص جالب است، چون می‌خواهیم یک <em>duration زمانی</em> را منتقل کند، مثل <code>5s</code> یعنی ۵ ثانیه یا <code>10m</code> یعنی ۱۰ دقیقه. برای کمک به این کار می‌توانیم از function مربوط به <a href="https://pkg.go.dev/flag#DurationVar"><code>flag.DurationVar()</code></a> استفاده کنیم تا مقدار command-line flag را بخواند و به صورت خودکار برای ما به type نوع <code>time.Duration</code> تبدیل کند.</p>
+
+<p>فایل <code>cmd/api/main.go</code> را به شکل زیر به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>File: cmd/api/main.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Add maxOpenConns, maxIdleConns and maxIdleTime fields to hold the configuration
+</span><span class="c1"></span><span class="c1">// settings for the connection pool.
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">config</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">port</span> <span class="kt">int</span>
+    <span class="nx">env</span>  <span class="kt">string</span>
+    <span class="nx">db</span>   <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">dsn</span>          <span class="kt">string</span>
+        <span class="nx">maxOpenConns</span> <span class="kt">int</span>
+        <span class="nx">maxIdleConns</span> <span class="kt">int</span>
+        <span class="nx">maxIdleTime</span>  <span class="nx">time</span><span class="p">.</span><span class="nx">Duration</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">cfg</span> <span class="nx">config</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">port</span><span class="p">,</span> <span class="s">&#34;port&#34;</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="s">&#34;API server port&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">env</span><span class="p">,</span> <span class="s">&#34;env&#34;</span><span class="p">,</span> <span class="s">&#34;development&#34;</span><span class="p">,</span> <span class="s">&#34;Environment (development|staging|production)&#34;</span><span class="p">)</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">dsn</span><span class="p">,</span> <span class="s">&#34;db-dsn&#34;</span><span class="p">,</span> <span class="nx">os</span><span class="p">.</span><span class="nf">Getenv</span><span class="p">(</span><span class="s">&#34;GREENLIGHT_DB_DSN&#34;</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;PostgreSQL DSN&#34;</span><span class="p">)</span>
+
+    <span class="c1">// Read the connection pool settings from command-line flags into the config struct.
+</span><span class="c1"></span>    <span class="c1">// Note that the default values we&#39;re using are the ones we discussed above.
+</span><span class="c1"></span>    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxOpenConns</span><span class="p">,</span> <span class="s">&#34;db-max-open-conns&#34;</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="s">&#34;PostgreSQL max open connections&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxIdleConns</span><span class="p">,</span> <span class="s">&#34;db-max-idle-conns&#34;</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="s">&#34;PostgreSQL max idle connections&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">DurationVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxIdleTime</span><span class="p">,</span> <span class="s">&#34;db-max-idle-time&#34;</span><span class="p">,</span> <span class="mi">15</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="p">,</span> <span class="s">&#34;PostgreSQL max connection idle time&#34;</span><span class="p">)</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">Parse</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="o">...</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nf">openDB</span><span class="p">(</span><span class="nx">cfg</span> <span class="nx">config</span><span class="p">)</span> <span class="p">(</span><span class="o">*</span><span class="nx">sql</span><span class="p">.</span><span class="nx">DB</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">db</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">sql</span><span class="p">.</span><span class="nf">Open</span><span class="p">(</span><span class="s">&#34;postgres&#34;</span><span class="p">,</span> <span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">dsn</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Set the maximum number of open (in-use + idle) connections in the pool. Note that
+</span><span class="c1"></span>    <span class="c1">// passing a value less than or equal to 0 will mean there is no limit.
+</span><span class="c1"></span>    <span class="nx">db</span><span class="p">.</span><span class="nf">SetMaxOpenConns</span><span class="p">(</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxOpenConns</span><span class="p">)</span>
+
+    <span class="c1">// Set the maximum number of idle connections in the pool. Again, passing a value
+</span><span class="c1"></span>    <span class="c1">// less than or equal to 0 will mean there is no limit.
+</span><span class="c1"></span>    <span class="nx">db</span><span class="p">.</span><span class="nf">SetMaxIdleConns</span><span class="p">(</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxIdleConns</span><span class="p">)</span>
+
+    <span class="c1">// Set the maximum idle timeout for connections in the pool. Passing a duration less
+</span><span class="c1"></span>    <span class="c1">// than or equal to 0 will mean that connections are not closed due to their idle time. 
+</span><span class="c1"></span>    <span class="nx">db</span><span class="p">.</span><span class="nf">SetConnMaxIdleTime</span><span class="p">(</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxIdleTime</span><span class="p">)</span>
+
+    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">5</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">db</span><span class="p">.</span><span class="nf">PingContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">db</span><span class="p">.</span><span class="nf">Close</span><span class="p">(</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">db</span><span class="p">,</span> <span class="kc">nil</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>اگر حالا application را دوباره اجرا کنید، همه چیز همچنان باید درست کار کند. برای flag مربوط به <code>db-max-idle-time</code> می‌توانید هر مقداری را پاس بدهید که برای function مربوط به <a href="https://golang.org/pkg/time/#ParseDuration"><code>time.ParseDuration()</code></a> قابل قبول است؛ مثل <code>300ms</code> یعنی ۳۰۰ millisecond، <code>5s</code> یعنی ۵ ثانیه یا <code>2h45m</code> یعنی ۲ ساعت و ۴۵ دقیقه. واحدهای زمانی معتبر عبارت‌اند از <code>ns</code>، <code>us</code> یا <code>µs</code>، <code>ms</code>، <code>s</code>، <code>m</code> و <code>h</code>.</p>
+
+<p>برای مثال:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api -db-max-open-conns=50 -db-max-idle-conns=50 -db-max-idle-time=2h30m </pre>
+</figure>
+
+<p>در این نقطه احتمالا تغییر واضحی در application نمی‌بینید و کار زیادی هم نمی‌توانیم برای نشان دادن اثر این settingها انجام دهیم. اما بعدا در کتاب کمی load testing انجام می‌دهیم و توضیح می‌دهیم چطور با استفاده از متد <a href="https://golang.org/pkg/database/sql/#DB.Stats"><code>db.Stats()</code></a> وضعیت connection pool را در real-time monitor کنید. آن موقع می‌توانید بخشی از رفتاری را که در این فصل درباره‌اش صحبت کردیم در عمل ببینید.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="05.02-connecting-to-postgresql.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="06.00-sql-migrations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "05.02-connecting-to-postgresql.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "06.00-sql-migrations.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

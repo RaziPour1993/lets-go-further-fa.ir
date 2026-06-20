@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی PostgreSQL &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="05.00-database-setup-and-configuration.html">راه‌اندازی و پیکربندی database</a> &rsaquo; راه‌اندازی PostgreSQL</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="05.00-database-setup-and-configuration.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="05.02-connecting-to-postgresql.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۵.۱.</div>
+			<h2 id="setting-up-postgresql">راه‌اندازی PostgreSQL</h2>
+
+<h3 id="installing-postgresql">نصب PostgreSQL</h3>
+
+<p>اگر همراه کتاب جلو می‌روید، در این نقطه باید PostgreSQL را روی کامپیوتر خود نصب کنید. مستندات رسمی PostgreSQL شامل <a href="https://www.postgresql.org/download/">دستورالعمل‌های کامل دانلود و نصب</a> برای همه نوع operating system است، اما اگر از macOS استفاده می‌کنید باید بتوانید آخرین نسخه را با این command نصب کنید:</p>
+
+<figure class="code bash">
+<pre>$ brew install postgresql@15 </pre>
+</figure>
+
+<p>یا اگر از یک Linux distribution استفاده می‌کنید، باید بتوانید PostgreSQL را از طریق package manager خود نصب کنید. برای مثال، اگر OS شما از package manager مربوط به <code>apt</code> پشتیبانی می‌کند، مثل Debian و Ubuntu، می‌توانید با این command نصبش کنید:</p>
+
+<figure class="code bash">
+<pre>$ sudo apt install postgresql</pre>
+</figure>
+
+<p>روی ماشین‌های Windows می‌توانید PostgreSQL را با استفاده از <a href="https://chocolatey.org">Chocolatey package manager</a> و این command نصب کنید:</p>
+
+<figure class="code bash">
+<pre>&gt; choco install postgresql</pre>
+</figure>
+
+<h3 id="connecting-to-the-postgresql-interactive-terminal">اتصال به terminal تعاملی PostgreSQL</h3>
+
+<p>وقتی PostgreSQL نصب می‌شود، باید یک binary به نام <code>psql</code> هم روی کامپیوتر شما ایجاد شده باشد. این binary یک front-end مبتنی بر terminal برای کار با PostgreSQL فراهم می‌کند.</p>
+
+<p>می‌توانید با اجرای command مربوط به <code>psql --version</code> از terminal، در دسترس بودن آن را بررسی کنید:</p>
+
+<figure class="code bash">
+<pre>$ psql --version
+<samp>psql (PostgreSQL) 15.4 (Ubuntu 15.4-1.pgdg22.04+1</samp></pre>
+</figure>
+
+<p>اگر از قبل با PostgreSQL آشنا نیستید، فرایند اتصال به آن برای اولین بار با استفاده از <code>psql</code> ممکن است کمی غیرشهودی باشد. پس بیایید لحظه‌ای وقت بگذاریم و آن را مرور کنیم.</p>
+
+<p>وقتی PostgreSQL تازه نصب می‌شود، فقط یک user account دارد: یک superuser به نام <code>postgres</code>. در قدم اول، برای انجام هر کاری باید به عنوان همین superuser به PostgreSQL وصل شویم؛ و از آنجا می‌توانیم هر setup stepای را که لازم داریم انجام دهیم، مثل ساخت database و ایجاد userهای دیگر.</p>
+
+<p>در زمان نصب، باید یک user در <em>operating system</em> به نام <code>postgres</code> هم روی ماشین شما ایجاد شده باشد. در سیستم‌های مبتنی بر Unix می‌توانید فایل <code>/etc/passwd</code> را برای تایید این موضوع بررسی کنید، به این شکل:</p>
+
+<figure class="code bash">
+<pre>$ cat /etc/passwd | grep &#39;postgres&#39;
+<samp>postgres:x:127:134:PostgreSQL administrator,,,:/var/lib/postgresql:/bin/bash</samp></pre>
+</figure>
+
+<p>این مهم است چون PostgreSQL به صورت پیش‌فرض برای هر connection از ماشین local، از یک authentication scheme به نام <em>peer authentication</em> استفاده می‌کند. peer authentication یعنی اگر username کاربر فعلی operating system با username یک user معتبر PostgreSQL match باشد، آن کاربر می‌تواند بدون authentication بیشتر به عنوان همان user وارد PostgreSQL شود. هیچ passwordای در کار نیست.</p>
+
+<p>پس نتیجه می‌گیریم که اگر به user مربوط به <em>operating system</em> با نام <code>postgres</code> switch کنیم، باید بتوانیم بدون نیاز به authentication بیشتر با استفاده از <code>psql</code> به PostgreSQL وصل شویم. در واقع می‌توانید هر دو کار را در یک مرحله با command زیر انجام دهید:</p>
+
+<figure class="code bash">
+<pre>$ sudo -u postgres psql
+<samp>psql (15.4 (Ubuntu 15.4-1.pgdg22.04+1))
+Type &#34;help&#34; for help.</samp>
+
+postgres=#</pre>
+</figure>
+
+<p>پس برای تایید، کاری که اینجا انجام دادیم استفاده از command مربوط به <code>sudo</code> یا <em>superuser do</em> بود تا command مربوط به <code>psql</code> را به عنوان <em>operating system user</em> به نام <code>postgres</code> اجرا کنیم. این کار یک session در front-end تعاملی مبتنی بر terminal باز می‌کند، جایی که ما به عنوان superuser مربوط به PostgreSQL یعنی <code>postgres</code> authenticated شده‌ایم.</p>
+
+<p>اگر بخواهید، می‌توانید با اجرای query مربوط به <code>&quot;SELECT current_user&quot;</code> تایید کنید که در حال حاضر کدام user PostgreSQL هستید:</p>
+
+<figure class="code bash">
+<pre>postgres=# SELECT current_user;
+<samp> current_user 
+--------------
+ postgres
+(1 row)</samp></pre>
+</figure>
+
+<h3 id="creating-databases-users-and-extensions">ساخت databaseها، userها و extensionها</h3>
+
+<p>حالا که به عنوان superuser مربوط به <code>postgres</code> وصل هستیم، یک database جدید برای پروژه با نام <code>greenlight</code> می‌سازیم و بعد با استفاده از command مربوط به <code>\c</code> به آن وصل می‌شویم:</p>
+
+<figure class="code bash">
+<pre>postgres=# CREATE DATABASE greenlight;
+<samp>CREATE DATABASE</samp>
+postgres=# \c greenlight
+<samp>You are now connected to database &#34;greenlight&#34; as user &#34;postgres&#34;.</samp>
+greenlight=#</pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> در PostgreSQL کاراکتر <code>\</code> نشان‌دهنده یک <em>meta command</em> است. چند meta command مفید دیگر عبارت‌اند از <code>\l</code> برای فهرست کردن همه databaseها، <code>\dt</code> برای فهرست کردن tableها، و <code>\du</code> برای فهرست کردن userها. همچنین می‌توانید <code>\?</code> را اجرا کنید تا فهرست کامل meta commandهای موجود را ببینید.
+</p></aside>
+
+<p>حالا که database مربوط به <code>greenlight</code> وجود دارد و به آن وصل هستیم، چند کار هست که باید انجام دهیم.</p>
+
+<p>اولین کار ساخت یک user جدید به نام <code>greenlight</code> بدون permissionهای superuser است؛ userای که بتوانیم برای اجرای SQL migrationها و اتصال به database از application Go خودمان استفاده کنیم. می‌خواهیم این user جدید را طوری setup کنیم که به جای peer authentication از authentication مبتنی بر <em>password</em> استفاده کند.</p>
+
+<p>PostgreSQL همچنین مفهومی به نام <em>extension</em> دارد که featureهای اضافه‌ای روی functionality استاندارد اضافه می‌کند. فهرست extensionهایی که همراه PostgreSQL ارائه می‌شوند <a href="https://www.postgresql.org/docs/current/contrib.html">اینجا</a> قابل مشاهده است، و <a href="https://www.postgresql.org/download/products/6-postgresql-extensions/">چند مورد دیگر</a> هم وجود دارد که می‌توانید جداگانه دانلود کنید.</p>
+
+<p>در این پروژه قرار است از extension مربوط به <a href="https://www.postgresql.org/docs/current/citext.html"><code>citext</code></a> استفاده کنیم. این extension یک character string type غیر حساس به بزرگی و کوچکی حروف به PostgreSQL اضافه می‌کند که بعدا در کتاب برای ذخیره email addressهای userها از آن استفاده می‌کنیم.</p>
+
+<p>commandهای زیر را اجرا کنید تا یک user جدید <code>greenlight</code> با password مشخص بسازید و extension مربوط به <code>citext</code> را به database اضافه کنید:</p>
+
+<figure class="code bash">
+<pre>greenlight=# CREATE ROLE greenlight WITH LOGIN PASSWORD &#39;pa55word&#39;;
+<samp>CREATE ROLE</samp>
+greenlight=# CREATE EXTENSION IF NOT EXISTS citext;
+<samp>CREATE EXTENSION</samp></pre>
+</figure>
+
+<aside class="important"><p>
+<strong>مهم:</strong> اگر همراه کتاب جلو می‌روید، حتما passwordای را که برای user مربوط به <code>greenlight</code> تنظیم کرده‌اید به خاطر بسپارید. در stepهای بعدی به آن نیاز دارید.
+</p></aside>
+
+<p>وقتی این کار با موفقیت انجام شد، می‌توانید <code>exit</code> یا <code>\q</code> را تایپ کنید تا front-end مبتنی بر terminal بسته شود و به user عادی operating system خودتان برگردید.</p>
+
+<figure class="code bash">
+<pre>greenlight=# exit</pre>
+</figure>
+
+<h3 id="connecting-as-the-new-user">اتصال به عنوان user جدید</h3>
+
+<p>قبل از اینکه جلوتر برویم، بیایید مطمئن شویم همه چیز درست setup شده و تلاش کنیم به عنوان user مربوط به <code>greenlight</code> به database مربوط به <code>greenlight</code> وصل شویم. وقتی prompt نمایش داده شد، passwordای را که در step بالا تنظیم کردید وارد کنید.</p>
+
+<figure class="code bash">
+<pre>$ psql --host=localhost --dbname=greenlight --username=greenlight
+Password for user greenlight: 
+<samp>psql (15.4 (Ubuntu 15.4-1.pgdg22.04+1))
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+Type &#34;help&#34; for help.</samp>
+
+greenlight=&gt; SELECT current_user;
+<samp> current_user 
+--------------
+ greenlight
+(1 row)</samp>
+
+greenlight=&gt; exit</pre>
+</figure>
+
+<p>عالی! این تایید می‌کند که database ما و user جدید <code>greenlight</code> با credentials مبتنی بر password درست کار می‌کنند، و می‌توانیم بدون مشکل به عنوان آن user، SQL statementها را اجرا کنیم.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="optimizing-postgresql-settings">بهینه‌سازی settingهای PostgreSQL</h4>
+
+<p>settingهای پیش‌فرضی که همراه PostgreSQL ارائه می‌شوند نسبتا محافظه‌کارانه هستند، و معمولا می‌توانید با تنظیم مقدارها در فایل <code>postgresql.conf</code>، performance database خود را بهتر کنید.</p>
+
+<p>می‌توانید با SQL query زیر بررسی کنید فایل <code>postgresql.conf</code> شما کجا قرار دارد:</p>
+
+<figure class="code bash">
+<pre>$ sudo -u postgres psql -c &#39;SHOW config_file;&#39;
+<samp>               config_file               
+-----------------------------------------
+ /etc/postgresql/15/main/postgresql.conf
+(1 row)</samp></pre>
+</figure>
+
+<p><a href="https://www.enterprisedb.com/postgres-tutorials/how-tune-postgresql-memory">این مقاله</a> معرفی خوبی از بعضی از مهم‌ترین settingهای PostgreSQL ارائه می‌دهد و راهنمایی می‌کند که چه مقدارهایی برای شروع منطقی هستند. اگر به بهینه‌سازی PostgreSQL علاقه دارید، پیشنهاد می‌کنم آن را بخوانید.</p>
+
+<p>در روش جایگزین، می‌توانید از <a href="https://pgtune.leopard.in.ua">این ابزار web-based</a> استفاده کنید تا بر اساس سخت‌افزار در دسترس سیستم شما، مقدارهای پیشنهادی تولید کند. یک feature خوب این ابزار این است که SQL statementهای <code>ALTER SYSTEM</code> را هم خروجی می‌دهد؛ statementهایی که می‌توانید روی database اجرا کنید تا به جای تغییر دستی فایل <code>postgresql.conf</code>، settingها را تغییر دهید.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="05.00-database-setup-and-configuration.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="05.02-connecting-to-postgresql.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "05.00-database-setup-and-configuration.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "05.02-connecting-to-postgresql.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
