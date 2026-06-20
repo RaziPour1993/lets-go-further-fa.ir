@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>مروری بر migrationهای SQL &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="06.00-sql-migrations.html">migrationهای SQL</a> &rsaquo; مروری بر migrationهای SQL</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="06.00-sql-migrations.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="06.02-working-with-sql-migrations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۶.۱.</div>
+			<h2 id="an-overview-of-sql-migrations">مروری بر migrationهای SQL</h2>
+
+<p>اگر با ایده SQL migrationها آشنا نیستید، در سطح خیلی کلی مفهومش این‌طور کار می‌کند:</p>
+
+<ol>
+<li><p>برای هر تغییری که می‌خواهید در database schema ایجاد کنید، مثل ساخت table، اضافه کردن column، یا حذف یک index استفاده‌نشده، یک جفت <em>migration file</em> می‌سازید. یک فایل migration «up» است که SQL statementهای لازم برای اعمال تغییر را در خودش دارد، و دیگری migration «down» است که SQL statementهای لازم برای برعکس کردن یا <em>roll back</em> کردن تغییر را شامل می‌شود.</p></li>
+
+<li><p>هر جفت migration file به صورت sequential شماره‌گذاری می‌شود، معمولا به شکل <code>0001, 0002, 0003...</code> یا با یک <a href="https://en.wikipedia.org/wiki/Unix_time">Unix timestamp</a>، تا ترتیب اعمال migrationها روی database مشخص شود.</p></li>
+
+<li><p>از نوعی ابزار یا script استفاده می‌کنید تا SQL statementهای داخل migration fileهای sequential را روی database اجرا یا roll back کند. این ابزار track می‌کند که کدام migrationها قبلا اعمال شده‌اند، تا فقط SQL statementهای لازم واقعا اجرا شوند.</p></li>
+</ol>
+
+<p>استفاده از migrationها برای مدیریت database schema، به جای اجرای دستی SQL statementها توسط خودتان، چند مزیت دارد:</p>
+
+<ul>
+<li><p>database schema، همراه با evolution و تغییراتش، به طور کامل توسط migration fileهای SQL از نوع «up» و «down» توصیف می‌شود. و چون این‌ها فقط فایل‌های معمولی شامل چند SQL statement هستند، می‌توانند کنار بقیه کد شما در یک version control system قرار بگیرند و track شوند.</p></li>
+
+<li><p>می‌توان با اجرای migrationهای «up» لازم، database schema فعلی را به شکل دقیق روی ماشین دیگری replicate کرد. این وقتی بسیار کمک‌کننده است که لازم دارید database schemaها را در environmentهای مختلف مثل development، testing و production مدیریت و synchronize کنید.</p></li>
+
+<li><p>در صورت نیاز می‌توان با اعمال migrationهای «down» مناسب، تغییرات database schema را roll back کرد.</p></li>
+</ul>
+
+<h3 id="installing-the-migrate-tool">نصب ابزار migrate</h3>
+
+<p>برای مدیریت SQL migrationها در این پروژه، از ابزار command-line مربوط به <a href="https://github.com/golang-migrate/migrate"><code>migrate</code></a> استفاده می‌کنیم.</p>
+
+<p>دستورالعمل‌های نصب دقیق برای operating systemهای مختلف را <a href="https://github.com/golang-migrate/migrate/tree/master/cmd/migrate">می‌توانید اینجا ببینید</a>، اما روی macOS باید بتوانید با این command نصبش کنید:</p>
+
+<figure class="code bash">
+<pre>$ brew install golang-migrate</pre>
+</figure>
+
+<p>و روی Linux و Windows، ساده‌ترین روش این است که یک <a href="https://github.com/golang-migrate/migrate/releases">pre-built binary</a> دانلود کنید و آن را به جایی در system path خود منتقل کنید. برای مثال، روی Linux:</p>
+
+<figure class="code bash">
+<pre>$ cd /tmp
+$ curl -L https://github.com/golang-migrate/migrate/releases/download/v4.16.2/migrate.linux-amd64.tar.gz | tar xvz
+$ mv migrate ~/go/bin/</pre>
+</figure>
+
+<p>قبل از ادامه، لطفا با اجرای binary مربوط به <code>migrate</code> همراه با flag مربوط به <code>-version</code> بررسی کنید که روی ماشین شما در دسترس است و کار می‌کند. باید شماره version فعلی را شبیه این خروجی دهد:</p>
+
+<figure class="code bash">
+<pre>$ migrate -version
+<samp>4.16.2</samp></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="adding-migrate-as-a-module-tool-dependency">اضافه کردن migrate به عنوان module tool dependency</h4>
+
+<p>خود ابزار <code>migrate</code> با Go نوشته شده است، یعنی در تئوری می‌توانید به جای نصب آن به عنوان binary مثل کاری که ما کردیم، از command مربوط به <code>go get -tool</code> استفاده کنید تا <code>migrate</code> را به عنوان یک <a href="https://www.alexedwards.net/blog/how-to-manage-tool-dependencies-in-go-1.24-plus">tool dependency</a> به فایل <code>go.mod</code> اضافه کنید.</p>
+
+<p>اما ما به دو دلیل این کار را نکرده‌ایم:</p>
+
+<ol>
+<li><p>در زمان نگارش، به دلیل اینکه command مربوط به <code>go tool</code> فعلا از build tagها پشتیبانی نمی‌کند، عملا امکان اجرای <code>migrate</code> به عنوان tool dependency وجود ندارد. یک issue باز درباره این موضوع <a href="https://github.com/golang-migrate/migrate/issues/1232">اینجا</a> وجود دارد.</p></li>
+
+<li><p>codebase مربوط به <code>migrate</code> تعداد <em>بسیار زیادی</em> child dependency دارد. اگر آن را به عنوان tool dependency به <code>go.mod</code> اضافه کنید و همچنین بخواهید dependencyها را vendor کنید، کاری که بعدا در کتاب انجام می‌دهیم، repository شما حدود 280MB بزرگ‌تر می‌شود.</p></li>
+</ol>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="06.00-sql-migrations.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="06.02-working-with-sql-migrations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "06.00-sql-migrations.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "06.02-working-with-sql-migrations.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

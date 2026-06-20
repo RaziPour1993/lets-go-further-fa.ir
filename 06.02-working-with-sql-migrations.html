@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>کار با مهاجرت‌های SQL &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="06.00-sql-migrations.html">مهاجرت‌های SQL</a> &rsaquo; کار با مهاجرت‌های SQL</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="06.01-an-overview-of-sql-migrations.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="07.00-crud-operations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۶.۲.</div>
+			<h2 id="working-with-sql-migrations">کار با مهاجرت‌های SQL</h2>
+
+<p>حالا که ابزار <code>migrate</code> نصب شده، بیایید نحوهٔ استفاده از آن را با ایجاد یک جدول <code>movies</code> جدید در پایگاه داده‌مان نشان دهیم.</p>
+
+<p>اولین کاری که باید انجام دهیم تولید یک جفت <em>فایل مهاجرت</em> با استفاده از دستور <code>migrate create</code> است. اگر همراه ما کدنویسی می‌کنید، دستور زیر را در ترمینال خود اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate create -seq -ext=.sql -dir=./migrations create_movies_table
+<samp>/home/alex/Projects/greenlight/migrations/000001_create_movies_table.up.sql
+/home/alex/Projects/greenlight/migrations/000001_create_movies_table.down.sql</samp></pre>
+</figure>
+
+<p>در این دستور:</p>
+
+<ul>
+<li>پرچم <code>-seq</code> نشان می‌دهد که می‌خواهیم از شماره‌گذاری متوالی مانند <code>0001, 0002, ...</code> برای فایل‌های مهاجرت استفاده کنیم (به جای timestamp یونیکس که پیش‌فرض است).</li>
+<li>پرچم <code>-ext</code> نشان می‌دهد که می‌خواهیم پسوند <code>.sql</code> را به فایل‌های مهاجرت بدهیم.</li>
+<li>پرچم <code>-dir</code> نشان می‌دهد که می‌خواهیم فایل‌های مهاجرت را در دایرکتوری <code>./migrations</code> ذخیره کنیم (که اگر از قبل وجود نداشته باشد به‌صورت خودکار ایجاد می‌شود).</li>
+<li>نام <code>create_movies_table</code> یک برچسب توصیفی است که به فایل‌های مهاجرت می‌دهیم تا محتوای آن‌ها را مشخص کند.</li>
+</ul>
+
+<p>اگر در دایرکتوری <code>migrations</code> خود نگاه کنید، حالا باید یک جفت فایل مهاجرت &lsquo;up&rsquo; و &lsquo;down&rsquo; جدید به این شکل ببینید:</p>
+
+<figure class="code plain">
+<pre>./migrations/
+├── 000001_create_movies_table.down.sql
+└── 000001_create_movies_table.up.sql</pre>
+</figure>
+
+<p>در حال حاضر این دو فایل جدید کاملاً خالی هستند. بیایید فایل مهاجرت &lsquo;up&rsquo; را ویرایش کنیم تا عبارت <code>CREATE TABLE</code> لازم برای جدول <code>movies</code> ما در آن قرار بگیرد، به این شکل:</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000001_create_movies_table.up.sql</figcaption>
+<pre><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">movies</span> <span class="p">(</span>
+    <span class="n">id</span> <span class="n">bigserial</span> <span class="k">PRIMARY</span> <span class="k">KEY</span><span class="p">,</span>  
+    <span class="n">created_at</span> <span class="k">timestamp</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">with</span> <span class="n">time</span> <span class="k">zone</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">DEFAULT</span> <span class="n">NOW</span><span class="p">(</span><span class="p">)</span><span class="p">,</span>
+    <span class="n">title</span> <span class="nb">text</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="k">year</span> <span class="nb">integer</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="n">runtime</span> <span class="nb">integer</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="n">genres</span> <span class="nb">text</span><span class="p">[</span><span class="p">]</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="k">version</span> <span class="nb">integer</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">DEFAULT</span> <span class="mi">1</span>
+<span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+<p>دقت کنید که فیلدها و نوع‌های داده در این جدول مشابه فیلدها و نوع‌های داده در ساختار <code>Movie</code> هستند که قبلاً ایجاد کردیم؟ این مهم است چون به این معناست که می‌توانیم به‌راحتی داده‌های هر ردیف جدول <code>movies</code> را به یک ساختار <code>Movie</code> واحد در کد Go خودمان نگاشت کنیم.</p>
+
+<p>اگر با نوع‌های دادهٔ مختلف PostgreSQL در عبارت SQL بالا آشنا نیستید، <a href="https://www.postgresql.org/docs/current/datatype.html">مستندات رسمی</a> مرور جامعی ارائه می‌دهد. اما مهم‌ترین نکاتی که باید به آن‌ها اشاره کنیم عبارتند از:</p>
+
+<ul>
+<li>ستون <code>id</code> نوع <a href="https://www.postgresql.org/docs/current/datatype-numeric.html#DATATYPE-NUMERIC-TABLE"><code>bigserial</code></a> دارد که یک عدد صحیح ۶۴ بیتی افزایشی خودکار از ۱ شروع‌شونده است. این کلید اصلی جدول خواهد بود.</li>
+<li>ستون <code>genres</code> نوع <code>text[]</code> دارد که یک <a href="https://www.postgresql.org/docs/current/arrays.html">آرایه</a> از صفر یا تعداد بیشتری مقدار <code>text</code> است. نکتهٔ مهم این است که آرایه‌ها در PostgreSQL خودشان قابل پرس‌وجو و ایندکس‌گذاری هستند، که بعداً در کتاب آن را نشان خواهیم داد.</li>
+<li>احتمالاً از کتاب <em>Let's Go</em> یادتان هست که کار با مقادیر <code>NULL</code> در Go می‌تواند ناخوشایند باشد، و در صورت امکان بهترین کار اعمال محدودیت‌های <code>NOT NULL</code> روی هر ستون جدول همراه با مقادیر <code>DEFAULT</code> مناسب است &mdash; دقیقاً مانند کاری که بالا انجام دادیم.</li>
+<li>برای ذخیرهٔ رشته‌ها از نوع <code>text</code> استفاده می‌کنیم، به جای نوع‌های جایگزین <code>varchar</code> یا <code>varchar(n)</code>. اگر علاقه‌مندید، این <a href="https://www.depesz.com/2010/03/02/charx-vs-varcharx-vs-varchar-vs-text/">مقالهٔ عالی وبلاگی</a> توضیح می‌دهد چرا <code>text</code> معمولاً بهترین نوع کاراکتری برای استفاده در PostgreSQL است.</li>
+</ul>
+
+<p>خب، بیایید به سراغ مهاجرت &lsquo;down&rsquo; برویم و عبارات SQL لازم برای بازگرداندن مهاجرت &lsquo;up&rsquo; که نوشتیم را اضافه کنیم.</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000001_create_movies_table.down.sql</figcaption>
+<pre><span class="k">DROP</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">movies</span><span class="p">;</span></pre>
+</figure>
+
+<p>دستور <code>DROP TABLE</code> در PostgreSQL همیشه تمام ایندکس‌ها و محدودیت‌های موجود روی جدول هدف را حذف می‌کند، بنابراین همین یک عبارت برای بازگرداندن &lsquo;up&rsquo; کافی است.</p>
+
+<p>عالی است، اولین جفت فایل‌های مهاجرت ما آماده شد!</p>
+
+<p>در همین حین، بیایید یک جفت فایل مهاجرت دیگر حاوی محدودیت‌های <a href="https://www.postgresql.org/docs/current/ddl-constraints.html"><code>CHECK</code></a> ایجاد کنیم تا برخی از قوانین تجاری خود را در سطح پایگاه داده اعمال کنیم. به‌طور خاص، می‌خواهیم مطمئن شویم که مقدار <code>runtime</code> همیشه بزرگ‌تر از صفر باشد، مقدار <code>year</code> بین ۱۸۸۸ و سال جاری باشد، و آرایه <code>genres</code> همیشه بین ۱ تا ۵ مورد داشته باشد.</p>
+
+<p>باز هم، اگر همراه ما کدنویسی می‌کنید، دستور زیر را برای ایجاد یک جفت فایل مهاجرت دیگر اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate create -seq -ext=.sql -dir=./migrations add_movies_check_constraints
+<samp>/home/alex/Projects/greenlight/migrations/000002_add_movies_check_constraints.up.sql
+/home/alex/Projects/greenlight/migrations/000002_add_movies_check_constraints.down.sql</samp></pre>
+</figure>
+
+<p>و سپس عبارات SQL زیر را به ترتیب برای افزودن و حذف محدودیت‌های <code>CHECK</code> اضافه کنید:</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000002_add_movies_check_constraints.up.sql</figcaption>
+<pre><span class="k">ALTER</span> <span class="k">TABLE</span> <span class="n">movies</span> <span class="k">ADD</span> <span class="k">CONSTRAINT</span> <span class="n">movies_runtime_check</span> <span class="k">CHECK</span> <span class="p">(</span><span class="n">runtime</span> <span class="o">&gt;</span><span class="o">=</span> <span class="mi">0</span><span class="p">)</span><span class="p">;</span>
+
+<span class="k">ALTER</span> <span class="k">TABLE</span> <span class="n">movies</span> <span class="k">ADD</span> <span class="k">CONSTRAINT</span> <span class="n">movies_year_check</span> <span class="k">CHECK</span> <span class="p">(</span><span class="k">year</span> <span class="k">BETWEEN</span> <span class="mi">1888</span> <span class="k">AND</span> <span class="n">date_part</span><span class="p">(</span><span class="s1">&#39;</span><span class="s1">year</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">now</span><span class="p">(</span><span class="p">)</span><span class="p">)</span><span class="p">)</span><span class="p">;</span>
+
+<span class="k">ALTER</span> <span class="k">TABLE</span> <span class="n">movies</span> <span class="k">ADD</span> <span class="k">CONSTRAINT</span> <span class="n">genres_length_check</span> <span class="k">CHECK</span> <span class="p">(</span><span class="n">array_length</span><span class="p">(</span><span class="n">genres</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="k">BETWEEN</span> <span class="mi">1</span> <span class="k">AND</span> <span class="mi">5</span><span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000002_add_movies_check_constraints.down.sql</figcaption>
+<pre><span class="k">ALTER</span> <span class="k">TABLE</span> <span class="n">movies</span> <span class="k">DROP</span> <span class="k">CONSTRAINT</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">movies_runtime_check</span><span class="p">;</span>
+
+<span class="k">ALTER</span> <span class="k">TABLE</span> <span class="n">movies</span> <span class="k">DROP</span> <span class="k">CONSTRAINT</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">movies_year_check</span><span class="p">;</span>
+
+<span class="k">ALTER</span> <span class="k">TABLE</span> <span class="n">movies</span> <span class="k">DROP</span> <span class="k">CONSTRAINT</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">genres_length_check</span><span class="p">;</span></pre>
+</figure>
+
+<p>وقتی داده‌ای را در جدول <code>movies</code> درج یا به‌روزرسانی می‌کنیم، اگر هر کدام از این بررسی‌ها fail شود، درایور پایگاه داده خطایی مشابه این برمی‌گرداند:</p>
+
+<figure class="code bash">
+<pre>pq: new row for relation &#34;movies&#34; violates check constraint &#34;movies_year_check&#34;</pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> کاملاً قابل قبول است که یک فایل مهاجرت واحد شامل چندین عبارت SQL باشد، همان‌طور که در دو فایل بالا می‌بینیم. در واقع، می‌توانستیم محدودیت‌های <code>CHECK</code> را همراه با عبارت <code>CREATE TABLE</code> در اولین جفت فایل‌های مهاجرت قرار دهیم، اما برای هدف این کتاب، قرار دادن آن‌ها در یک مهاجرت جداگانهٔ دوم به ما کمک می‌کند نحوهٔ کار ابزار <code>migrate</code> را نشان دهیم.
+</p></aside>
+
+<h3 id="executing-the-migrations">اجرای مهاجرت‌ها</h3>
+
+<p>خب، حالا آماده‌ایم دو مهاجرت &lsquo;up&rsquo; را روی پایگاه دادهٔ <code>greenlight</code> خود اجرا کنیم.</p>
+
+<p>اگر همراه ما کدنویسی می‌کنید، دستور زیر را برای اجرای مهاجرت‌ها اجرا کنید و DSN پایگاه داده را از متغیر محیطی خود وارد کنید. اگر همه چیز به‌درستی پیکربندی شده باشد، باید خروجی‌هایی مشابه این ببینید که تأیید می‌کند مهاجرت‌ها با موفقیت اجرا شده‌اند:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$GREENLIGHT_DB_DSN up
+<samp>1/u create_movies_table (38.19761ms)
+2/u add_movies_check_constraints (63.284269ms)</samp></pre>
+</figure>
+
+<aside class="important"><p>
+<strong>مهم:</strong> اگر از PostgreSQL نسخهٔ ۱۵ استفاده می‌کنید، ممکن است خطای <code>error: pq: permission denied for schema public...</code> را هنگام اجرای این دستور دریافت کنید. دلیل این است که نسخهٔ ۱۵ مجوز <code>CREATE</code> را از تمام کاربران به جز مالک پایگاه داده لغو می‌کند. <a href="https://stackoverflow.com/questions/74110708/postgres-15-permission-denied-for-schema-public">این پست StackOverflow</a> را برای اطلاعات بیشتر ببینید.</p>
+
+<p>برای حل این مشکل، مالک پایگاه داده را روی کاربر <code>greenlight</code> تنظیم کنید:</p>
+
+<figure class="code sql">
+<pre><span class="k">ALTER</span> <span class="k">DATABASE</span> <span class="n">greenlight</span> <span class="k">OWNER</span> <span class="k">TO</span> <span class="n">greenlight</span><span class="p">;</span></pre>
+</figure>
+
+<p>اگر هنوز کار نمی‌کند، مجوزهای <code>CREATE</code> را به‌صورت صریح به کاربر <code>greenlight</code> اعطا کنید:</p>
+
+<figure class="code sql">
+<pre><span class="k">GRANT</span> <span class="k">CREATE</span> <span class="k">ON</span> <span class="k">DATABASE</span> <span class="n">greenlight</span> <span class="k">TO</span> <span class="n">greenlight</span><span class="p">;</span></pre>
+</figure>
+
+<p></p></aside>
+
+<p>در این مرحله، ارزش دارد که یک اتصال به پایگاه دادهٔ خود باز کنید و جداول را با دستور فرعی <code>\dt</code> فهرست کنید:</p>
+
+<figure class="code bash">
+<pre>$ psql $GREENLIGHT_DB_DSN
+Password for user greenlight: 
+<samp>psql (15.4 (Ubuntu 15.4-1.pgdg22.04+1))
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+Type &#34;help&#34; for help.</samp>
+
+greenlight=&gt; \dt
+<samp>                List of relations
+ Schema |       Name        | Type  |   Owner    
+--------+-------------------+-------+------------
+ public | movies            | table | greenlight
+ public | schema_migrations | table | greenlight
+(2 rows)</samp></pre>
+</figure>
+
+<p>باید ببینید که جدول <code>movies</code> ایجاد شده، همراه با جدول <code>schema_migrations</code> که هر دو متعلق به کاربر <code>greenlight</code> هستند.</p>
+
+<p>جدول <code>schema_migrations</code> به‌صورت خودکار توسط ابزار <code>migrate</code> تولید می‌شود و برای ردیابی اینکه کدام مهاجرت‌ها اعمال شده‌اند استفاده می‌شود. بیایید نگاهی سریع به داخل آن بیندازیم:</p>
+
+<figure class="code bash">
+<pre>greenlight=&gt; SELECT * FROM schema_migrations;
+<samp> version | dirty 
+---------+-------
+       2 | f
+(1 row)</samp></pre>
+</figure>
+
+<p>ستون <code>version</code> در اینجا نشان می‌دهد که فایل‌های مهاجرت ما تا شمارهٔ <code>2</code> در ترتیب (شامل آن) روی پایگاه داده اجرا شده‌اند. مقدار ستون <code>dirty</code> برابر <code>false</code> است، که نشان می‌دهد فایل‌های مهاجرت <em>بدون هیچ خطایی</em> به‌صورت تمیز اجرا شده‌اند و عبارات SQL حاوی آن‌ها <em>به‌طور کامل</em> با موفقیت اعمال شده‌اند.</p>
+
+<p>اگر می‌خواهید، می‌توانید دستور فرعی <code>\d</code> را روی جدول <code>movies</code> اجرا کنید تا ساختار جدول را ببینید و تأیید کنید که محدودیت‌های <code>CHECK</code> به‌درستی ایجاد شده‌اند. به این شکل:</p>
+
+<figure class="code bash">
+<pre>greenlight-&gt; \d movies
+<samp>                                        Table &#34;public.movies&#34;
+   Column   |            Type             | Collation | Nullable |              Default               
+------------+-----------------------------+-----------+----------+------------------------------------
+ id         | bigint                      |           | not null | nextval(&#39;movies_id_seq&#39;::regclass)
+ created_at | timestamp(0) with time zone |           | not null | now()
+ title      | text                        |           | not null | 
+ year       | integer                     |           | not null | 
+ runtime    | integer                     |           | not null | 
+ genres     | text[]                      |           | not null | 
+ version    | integer                     |           | not null | 1
+Indexes:
+    &#34;movies_pkey&#34; PRIMARY KEY, btree (id)
+Check constraints:
+    &#34;genres_length_check&#34; CHECK (array_length(genres, 1) &gt;= 1 AND array_length(genres, 1) &lt;= 5)
+    &#34;movies_runtime_check&#34; CHECK (runtime &gt;= 0)
+    &#34;movies_year_check&#34; CHECK (year &gt;= 1888 AND year::double precision &lt;= date_part(&#39;year&#39;::text, now()))</samp></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="migrating-to-a-specific-version">مهاجرت به یک نسخهٔ خاص</h4>
+
+<p>به جای نگاه کردن به جدول <code>schema_migrations</code>، اگر می‌خواهید ببینید پایگاه دادهٔ شما در حال حاضر روی کدام نسخهٔ مهاجرت است، می‌توانید دستور <code>version</code> ابزار <code>migrate</code> را اجرا کنید، به این شکل:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$EXAMPLE_DSN version
+<samp>2</samp></pre>
+</figure>
+
+<p>همچنین می‌توانید با استفاده از دستور <code>goto</code> به یک نسخهٔ خاص مهاجرت کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$EXAMPLE_DSN goto 1</pre>
+</figure>
+
+<h4 id="executing-down-migrations">اجرای مهاجرت‌های down</h4>
+
+<p>شما می‌توانید از دستور <code>down</code> برای بازگرداندن تعداد مشخصی از مهاجرت‌ها استفاده کنید. برای مثال، برای بازگرداندن <em>آخرین مهاجرت</em> باید اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$EXAMPLE_DSN down 1</pre>
+</figure>
+
+<p>من شخصاً ترجیح می‌دهم از دستور <code>goto</code> برای بازگردانی استفاده کنم (چون صریح‌تر روی نسخهٔ هدف است) و استفاده از دستور <code>down</code> را برای بازگرداندن <em>تمام مهاجرت‌ها</em> نگه دارم، مانند این:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$EXAMPLE_DSN down
+<samp>Are you sure you want to apply all down migrations? [y/N]
+y
+Applying all down migrations
+2/d create_bar_table (39.988791ms)
+1/d create_foo_table (59.460276ms)</samp></pre>
+</figure>
+
+<p>نمونهٔ دیگری از این دستور، <code>drop</code> است که تمام جداول پایگاه داده از جمله جدول <code>schema_migrations</code> را حذف می‌کند — اما خود پایگاه داده باقی می‌ماند، <a href="https://github.com/golang-migrate/migrate/issues/193">همراه با هر چیزی که قبلاً ایجاد شده</a> مثل دنباله‌ها و enumها. به همین دلیل، استفاده از <code>drop</code> می‌تواند پایگاه داده را در وضعیت نامرتب و نامشخصی قرار دهد، و به‌طور کلی بهتر است اگر می‌خواهید همه چیز را بازگردانید، از دستور <code>down</code> استفاده کنید.</p>
+
+<h4 id="fixing-errors-in-sql-migrations">رفع خطاها در مهاجرت‌های SQL</h4>
+
+<p>مهم است که دربارهٔ آنچه هنگام ایجاد خطای نحوی در فایل‌های مهاجرت SQL اتفاق می‌افتد صحبت کنیم، زیرا رفتار ابزار <code>migrate</code> در ابتدا می‌تواند کمی گیج‌کننده باشد.</p>
+
+<p>وقتی یک مهاجرت حاوی خطا اجرا می‌کنید، همهٔ عبارات SQL تا قبل از عبارت خطادار اعمال می‌شوند و سپس ابزار <code>migrate</code> با پیامی که خطا را توضیح می‌دهد خارج می‌شود. چیزی شبیه به این:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$EXAMPLE_DSN up
+<samp>1/u create_foo_table (36.6328ms)
+2/u create_bar_table (71.835442ms)
+error: migration failed: syntax error at end of input in line 0: CREATE TABLE (details: pq: syntax error at end of input)</samp></pre>
+</figure>
+
+<p>اگر فایل مهاجرتی که با خطا مواجه شد شامل چندین عبارت SQL باشد، ممکن است فایل مهاجرت <em>تا حدی</em> اعمال شده باشد قبل از اینکه خطا رخ دهد. در نتیجه، این بدان معناست که پایگاه داده از دید ابزار <code>migrate</code> در وضعیت نامعلومی قرار دارد.</p>
+
+<p>بر این اساس، فیلد <code>version</code> در جدول <code>schema_migrations</code> عدد <em>مهاجرت ناموفق</em> را نشان می‌دهد و فیلد <code>dirty</code> روی <code>true</code> تنظیم می‌شود. در این شرایط، اگر مهاجرت دیگری اجرا کنید (حتی مهاجرت <code>down</code>)، پیام خطایی مشابه زیر دریافت خواهید کرد:</p>
+
+<figure class="code bash">
+<pre>Dirty database version {X}. Fix and force version.</pre>
+</figure>
+
+<p>کاری که باید انجام دهید این است که خطای اصلی را بررسی کنید و بفهمید آیا فایل مهاجرتی که با خطا مواجه شد تا حدی اعمال شده است یا نه. اگر چنین بود، باید آن مهاجرت نیمه‌اعمال‌شده را به‌صورت دستی بازگردانید.</p>
+
+<p>وقتی این کار انجام شد، همچنین باید عدد <code>version</code> را در جدول <code>schema_migrations</code> به مقدار صحیح &lsquo;force&rsquo; کنید. برای مثال، برای قرار دادن شماره نسخهٔ پایگاه داده روی <code>1</code> باید از دستور <code>force</code> به این صورت استفاده کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$EXAMPLE_DSN force 1</pre>
+</figure>
+
+<p>پس از اعمال force روی نسخه، پایگاه داده به‌عنوان &lsquo;پاک&rsquo; در نظر گرفته می‌شود و باید بتوانید دوباره مهاجرت‌ها را بدون مشکل اجرا کنید.</p>
+
+<h4 id="remote-migration-files">فایل‌های مهاجرت از راه دور</h4>
+
+<p>ابزار <code>migrate</code> همچنین از خواندن فایل‌های مهاجرت از <em>منابع از راه دور</em> شامل Amazon S3 و مخزن‌های GitHub پشتیبانی می‌کند. برای مثال:</p>
+
+<figure class="code bash">
+<pre>$ migrate -source=&#34;s3://&lt;bucket&gt;/&lt;path&gt;&#34; -database=$EXAMPLE_DSN up
+$ migrate -source=&#34;github://owner/repo/path#ref&#34; -database=$EXAMPLE_DSN up
+$ migrate -source=&#34;github://user:personal-access-token@owner/repo/path#ref&#34; -database=$EXAMPLE_DSN up</pre>
+</figure>
+
+<p>اطلاعات بیشتر دربارهٔ این قابلیت و فهرست کامل منابع از راه دور پشتیبانی‌شده را می‌توانید <a href="https://github.com/golang-migrate/migrate#migration-sources">اینجا پیدا کنید</a>.</p>
+
+<h4 id="running-migrations-on-application-startup">اجرای مهاجرت‌ها هنگام راه‌اندازی برنامه</h4>
+
+<p>اگر می‌خواهید، امکان استفاده از پکیج Go <a href="https://github.com/golang-migrate/migrate"><code>golang-migrate/migrate</code></a> (نه ابزار خط فرمان) برای اجرای خودکار مهاجرت‌های پایگاه داده هنگام راه‌اندازی برنامه نیز وجود دارد.</p>
+
+<p>ما <em>از این روش</em> در کتاب استفاده <em>نخواهیم</em> کرد، پس اگر همراه ما کدنویسی می‌کنید، لطفاً کد خود را تغییر ندهید. اما به‌طور کلی، الگو چیزی شبیه به این است:</p>
+
+<figure class="code go">
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;context&#34;</span>      
+    <span class="s">&#34;database/sql&#34;</span> 
+    <span class="s">&#34;flag&#34;</span>
+    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;log&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+    <span class="s">&#34;os&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;github.com/golang-migrate/migrate/v4&#34;</span>                   <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;github.com/golang-migrate/migrate/v4/database/postgres&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="nx">_</span> <span class="s">&#34;github.com/golang-migrate/migrate/v4/source/file&#34;</span>     <span class="c1">// New import
+</span><span class="c1"></span>    <span class="nx">_</span> <span class="s">&#34;github.com/lib/pq&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="o">...</span>
+
+    <span class="nx">db</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nf">openDB</span><span class="p">(</span><span class="nx">cfg</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="nx">os</span><span class="p">.</span><span class="nf">Exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="p">}</span>
+    <span class="k">defer</span> <span class="nx">db</span><span class="p">.</span><span class="nf">Close</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">logger</span><span class="p">.</span><span class="nf">Info</span><span class="p">(</span><span class="s">&#34;database connection pool established&#34;</span><span class="p">)</span>
+
+    <span class="nx">migrationDriver</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">postgres</span><span class="p">.</span><span class="nf">WithInstance</span><span class="p">(</span><span class="nx">db</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">postgres</span><span class="p">.</span><span class="nx">Config</span><span class="p">{</span><span class="p">}</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="nx">os</span><span class="p">.</span><span class="nf">Exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="nx">migrator</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">migrate</span><span class="p">.</span><span class="nf">NewWithDatabaseInstance</span><span class="p">(</span><span class="s">&#34;file:///path/to/your/migrations&#34;</span><span class="p">,</span> <span class="s">&#34;postgres&#34;</span><span class="p">,</span> <span class="nx">migrationDriver</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="nx">os</span><span class="p">.</span><span class="nf">Exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">migrator</span><span class="p">.</span><span class="nf">Up</span><span class="p">(</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="o">&amp;&amp;</span> <span class="nx">err</span> <span class="o">!=</span> <span class="nx">migrate</span><span class="p">.</span><span class="nx">ErrNoChange</span> <span class="p">{</span>
+        <span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="nx">os</span><span class="p">.</span><span class="nf">Exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="p">}</span>
+    
+    <span class="nx">logger</span><span class="p">.</span><span class="nf">Info</span><span class="p">(</span><span class="s">&#34;database migrations applied&#34;</span><span class="p">)</span>
+
+    <span class="o">...</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>اگرچه این روش کار می‌کند — و ممکن است در ابتدا جذاب به نظر برسد — اتصال قوی اجرای مهاجرت‌ها به کد منبع برنامه می‌تواند در بلندمدت محدودکننده و مشکل‌ساز باشد.</p>
+
+<p>مقالهٔ <a href="https://pythonspeed.com/articles/schema-migrations-server-startup/">جداسازی مهاجرت‌های پایگاه داده از شروع سرور</a> بحث خوبی در این زمینه ارائه می‌دهد، و پیشنهاد می‌کنم اگر این موضوع برای شما جالب است آن را بخوانید. این مقاله روی پایتون تمرکز دارد، اما گول این را نخورید — اصول مشابه در برنامه‌های Go هم صادق است.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="06.01-an-overview-of-sql-migrations.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="07.00-crud-operations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "06.01-an-overview-of-sql-migrations.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "07.00-crud-operations.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
