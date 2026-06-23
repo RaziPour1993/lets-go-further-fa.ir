@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی جدول پایگاه داده توکن‌ها  &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="14.00-user-activation.html">فعال‌سازی کاربر</a> &rsaquo; راه‌اندازی جدول پایگاه داده توکن‌ها </span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="14.00-user-activation.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="14.02-creating-secure-activation-tokens.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۴.۱.</div>
+			<h2 id="setting-up-the-tokens-database-table">راه‌اندازی جدول پایگاه داده توکن‌ها</h2>
+
+<p>بیایید با ایجاد یک جدول جدید <code>tokens</code> در پایگاه داده خود برای ذخیره توکن‌های فعال‌سازی کاربرانمان شروع کنیم. اگر می‌خواهید همراهی کنید، دستور زیر را برای ایجاد یک جفت فایل migration جدید اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate create -seq -ext .sql -dir ./migrations create_tokens_table
+<samp>/home/alex/Projects/greenlight/migrations/000005_create_tokens_table.up.sql
+/home/alex/Projects/greenlight/migrations/000005_create_tokens_table.down.sql</samp></pre>
+</figure>
+
+<p>سپس دستورات SQL زیر را به ترتیب به فایل‌های migration &lsquo;up&rsquo; و &lsquo;down&rsquo; اضافه کنید:</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000005_create_tokens_table.up.sql</figcaption>
+<pre><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">tokens</span> <span class="p">(</span>
+    <span class="n">hash</span> <span class="n">bytea</span> <span class="k">PRIMARY</span> <span class="k">KEY</span><span class="p">,</span>
+    <span class="n">user_id</span> <span class="nb">bigint</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">REFERENCES</span> <span class="n">users</span> <span class="k">ON</span> <span class="k">DELETE</span> <span class="k">CASCADE</span><span class="p">,</span>
+    <span class="n">expiry</span> <span class="k">timestamp</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">with</span> <span class="n">time</span> <span class="k">zone</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="k">scope</span> <span class="nb">text</span> <span class="k">NOT</span> <span class="k">NULL</span>
+<span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000005_create_tokens_table.down.sql</figcaption>
+<pre><span class="k">DROP</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">tokens</span><span class="p">;</span></pre>
+</figure>
+
+<p>بیایید به سرعت ستون‌های این جدول جدید <code>tokens</code> را بررسی کرده و هدف هرکدام را توضیح دهیم.</p>
+
+<ul>
+<li><p>ستون <code>hash</code> شامل یک هش SHA-256 از توکن فعال‌سازی خواهد بود. مهم است تأکید کنیم که ما فقط هش توکن فعال‌سازی را در پایگاه داده ذخیره می‌کنیم &mdash; نه خود توکن فعال‌سازی را.</p>
+
+<p>دلیل اینکه می‌خواهیم توکن را قبل از ذخیره‌سازی هش کنیم، دقیقاً همان دلیلی است که رمز عبور کاربر را با bcrypt هش می‌کنیم &mdash; این کار لایه محافظتی اضافی در صورت نفوذ یا نشت پایگاه داده فراهم می‌کند. از آنجایی که توکن فعال‌سازی ما یک رشته تصادفی با آنتروپی بالا (۱۲۸ بیت) خواهد بود &mdash; برخلاف چیزی با آنتروپی پایین مانند رمز عبور معمولی کاربر &mdash; <a href="https://security.stackexchange.com/questions/151257/what-kind-of-hashing-to-use-for-storing-rest-api-tokens-in-the-database">استفاده از الگوریتم سریعی مانند SHA-256</a> برای ایجاد هش کافی است، به جای الگوریتم کندی مانند bcrypt.</p></li>
+
+<li><p>ستون <code>user_id</code> شامل شناسه کاربر مرتبط با توکن خواهد بود. ما از سینتکس <code>REFERENCES users</code> برای ایجاد یک <a href="https://www.postgresqltutorial.com/postgresql-foreign-key/">محدودیت foreign key</a> روی کلید اصلی جدول <code>users</code> خود استفاده می‌کنیم، که تضمین می‌کند هر مقداری در ستون <code>user_id</code> دارای یک ورودی <code>id</code> متناظر در جدول <code>users</code> ما باشد.</p>
+
+<p>همچنین از سینتکس <code>ON DELETE CASCADE</code> استفاده می‌کنیم تا به PostgreSQL دستور دهیم <em>به صورت خودکار تمام رکوردهای یک کاربر در جدول <code>tokens</code> ما را هنگام حذف رکورد والد در جدول <code>users</code> حذف کند</em>.</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> یک جایگزین رایج برای <code>ON DELETE CASCADE</code>، <code>ON DELETE RESTRICT</code> است که در مورد ما <em>مانع از حذف</em> رکورد والد در جدول <code>users</code> می‌شود اگر کاربر دارای توکن‌هایی در جدول <code>tokens</code> ما باشد. اگر از <code>ON DELETE RESTRICT</code> استفاده کنید، باید قبل از حذف خود رکورد کاربر، توکن‌های کاربر را به صورت دستی حذف کنید.
+</p></aside></li>
+
+<li><p>ستون <code>expiry</code> شامل زمانی خواهد بود که توکن &lsquo;منقضی&rsquo; شده و دیگر معتبر نیست. تنظیم زمان انقضای کوتاه از نظر امنیتی خوب است زیرا به کاهش پنجره احتمال حمله brute-force موفق علیه توکن کمک می‌کند. همچنین در سناریویی که کاربر <em>توکنی دریافت کرده اما از آن استفاده نکرده</em> و حساب ایمیل آن‌ها در زمان بعدی به خطر بیفتد، مفید است. با تنظیم یک محدودیت زمانی کوتاه، پنجره زمانی که توکن به خطر افتاده می‌تواند مورد استفاده قرار گیرد، کاهش می‌یابد.</p>
+
+<p>البته، خطرات امنیتی اینجا باید در مقابل قابلیت استفاده سنجیده شوند و ما می‌خواهیم زمان انقضا به اندازه کافی طولانی باشد تا کاربر بتواند حساب خود را در زمان دلخواه فعال کند. در مورد ما، زمان انقضای توکن‌های فعال‌سازی را روی ۳ روز از لحظه ایجاد توکن تنظیم می‌کنیم.</p></li>
+
+<li><p>ستون <code>scope</code> نشان می‌دهد توکن برای چه <em>هدفی</em> می‌تواند استفاده شود. بعداً در این کتاب همچنین نیاز داریم <em>توکن‌های احراز هویت</em> را ایجاد و ذخیره کنیم و بخش زیادی از کد و نیازهای ذخیره‌سازی برای آن‌ها دقیقاً مانند توکن‌های فعال‌سازی ما است. بنابراین به جای ایجاد جدول‌های جداگانه (و کد تعامل با آن‌ها)، آن‌ها را در یک جدول با مقداری در ستون <code>scope</code> برای محدود کردن هدف استفاده از توکن ذخیره می‌کنیم.</p></li>
+</ul>
+
+<p>خب، با تمام این توضیحات، باید بتوانید مایگریشن &lsquo;up&rsquo; را با دستور زیر اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$GREENLIGHT_DB_DSN up
+<samp>5/u create_tokens_table (21.568194ms)</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="14.00-user-activation.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="14.02-creating-secure-activation-tokens.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "14.00-user-activation.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "14.02-creating-secure-activation-tokens.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

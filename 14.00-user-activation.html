@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>فعال‌سازی کاربر &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; فعال‌سازی کاربر</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="13.05-graceful-shutdown-of-background-tasks.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="14.01-setting-up-the-tokens-database-table.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۴.</div>
+			<h1 id="user-activation">فعال‌سازی کاربر</h1>
+
+<p>در حال حاضر، کاربر می‌تواند با API <em>Greenlight</em> ما یک حساب کاربری ثبت کند، اما مطمئن نیستیم که آدرس ایمیلی که در هنگام ثبت‌نام ارائه کرده <em>واقعاً متعلق به خودش</em> است.</p>
+
+<p>بنابراین، در این بخش از کتاب، ما با قرار دادن دستورالعمل‌های «فعال‌سازی حساب» در ایمیل خوش‌آمدگویی، تأیید خواهیم کرد که کاربر از آدرس ایمیل واقعی و متعلق به خودش استفاده کرده است.</p>
+
+<p><a href="https://ux.stackexchange.com/a/111023">دلایل متعددی</a> برای داشتن مرحله فعال‌سازی حساب وجود دارد، اما مزایای اصلی آن این است که یک مانع اضافی برای ربات‌ها ایجاد می‌کند و به جلوگیری از سوءاستفاده توسط افرادی که با آدرس ایمیل جعلی یا آدرسی که متعلق به خودشان نیست ثبت‌نام می‌کنند، کمک می‌کند.</p>
+
+<p>برای ارائه یک مرور کلی از قبل، فرآیند فعال‌سازی حساب به صورت زیر عمل خواهد کرد:</p>
+
+<ol>
+<li>به عنوان بخشی از فرآیند ثبت‌نام کاربر جدید، یک <em>توکن فعال‌سازی</em> تصادفی با امنیت رمزنگاری ایجاد خواهیم کرد که حدس زدن آن غیرممکن است.</li>
+<li>سپس هش این توکن فعال‌سازی را در یک جدول <code>tokens</code> جدید، همراه با شناسه کاربر جدید و زمان انقضا برای توکن ذخیره خواهیم کرد.</li>
+<li>توکن فعال‌سازی اصلی (هش‌نشده) را در ایمیل خوش‌آمدگویی کاربر ارسال خواهیم کرد.</li>
+<li>کاربر سپس توکن خود را به یک endpoint جدید <code>PUT /v1/users/activated</code> ارسال می‌کند.</li>
+<li>اگر هش توکن در جدول <code>tokens</code> وجود داشته باشد و منقضی نشده باشد، وضعیت <code>activated</code> کاربر مربوطه را روی <code>true</code> تنظیم خواهیم کرد.</li>
+<li>در نهایت، توکن فعال‌سازی را از جدول <code>tokens</code> حذف خواهیم کرد تا دوباره قابل استفاده نباشد.</li>
+</ol>
+
+<p>در این بخش از کتاب، یاد خواهید گرفت که چگونه:</p>
+
+<ul>
+<li><p>یک گردش کار امن «فعال‌سازی حساب» پیاده‌سازی کنید که آدرس ایمیل کاربر جدید را تأیید می‌کند.</p></li>
+
+<li><p>توکن‌های تصادفی با امنیت رمزنگاری با استفاده از پکیج <code>crypto/rand</code> Go تولید کنید.</p></li>
+
+<li><p>هش‌های سریع از داده‌ها با استفاده از پکیج <code>crypto/sha256</code> تولید کنید.</p></li>
+
+<li><p>الگوهایی برای کار با روابط بین جدول‌های پایگاه داده پیاده‌سازی کنید، از جمله راه‌اندازی کلیدهای خارجی و بازیابی داده‌های مرتبط از طریق query‌های <code>JOIN</code> SQL.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="13.05-graceful-shutdown-of-background-tasks.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="14.01-setting-up-the-tokens-database-table.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "13.05-graceful-shutdown-of-background-tasks.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "14.01-setting-up-the-tokens-database-table.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

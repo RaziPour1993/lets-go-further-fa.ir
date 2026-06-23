@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>احراز هویت درخواست‌ها &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="15.00-authentication.html">احراز هویت</a> &rsaquo; احراز هویت درخواست‌ها</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="15.02-generating-authentication-tokens.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="16.00-authorization.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۵.۳.</div>
+			<h2 id="authenticating-requests">احراز هویت درخواست‌ها</h2>
+
+<p>اکنون که کلاینت‌های ما راهی برای مبادله اطلاعات ورود خود با یک token احراز هویت دارند، بیایید بررسی کنیم چگونه می‌توانیم از آن token برای <em>احراز هویت آن‌ها</em> استفاده کنیم تا دقیقاً بدانیم درخواست از کدام کاربر می‌آید.</p>
+
+<p>اساساً، وقتی یک کلاینت یک token احراز هویت دارد، از آن انتظار داریم که آن را در تمام درخواست‌های بعدی خود در هدر <code>Authorization</code> قرار دهد، به این صورت:</p>
+
+<figure class="code plain">
+<pre>Authorization: Bearer IEYZQUBEMPPAKPOAWTPV6YJ6RM</pre>
+</figure>
+
+<p>هنگامی که این درخواست‌ها را دریافت می‌کنیم، از یک متد middleware جدید <code>authenticate()</code> برای اجرای منطق زیر استفاده خواهیم کرد:</p>
+
+<ul>
+<li>اگر token احراز هویت معتبر نباشد، یک پاسخ <code>401 Unauthorized</code> و یک پیام خطا برای کلاینت ارسال می‌کنیم تا بداند token او نادرست یا غیرمعتبر است.</li>
+<li>اگر token احراز هویت معتبر باشد، جزئیات کاربر را جستجو کرده و به <em>request context</em> اضافه می‌کنیم.</li>
+<li>اگر هیچ هدر <code>Authorization</code> ارسال نشده باشد، در عوض جزئیات یک <em>کاربر ناشناس</em> را به request context اضافه می‌کنیم.</li>
+</ul>
+
+<h3 id="creating-the-anonymous-user">ایجاد کاربر ناشناس</h3>
+
+<p>بیایید با آخرین نکته شروع کنیم و ابتدا یک <em>کاربر ناشناس</em> را در فایل <code>internal/data/users.go</code> خود تعریف کنیم، به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/users.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Declare a new AnonymousUser variable.
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">AnonymousUser</span> <span class="p">=</span> <span class="o">&amp;</span><span class="nx">User</span><span class="p">{</span><span class="p">}</span>
+
+<span class="kd">type</span> <span class="nx">User</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">ID</span>        <span class="kt">int64</span>     <span class="s">`</span><span class="s">json:&#34;id&#34;</span><span class="s">`</span>
+    <span class="nx">CreatedAt</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Time</span> <span class="s">`</span><span class="s">json:&#34;created_at&#34;</span><span class="s">`</span>
+    <span class="nx">Name</span>      <span class="kt">string</span>    <span class="s">`</span><span class="s">json:&#34;name&#34;</span><span class="s">`</span>
+    <span class="nx">Email</span>     <span class="kt">string</span>    <span class="s">`</span><span class="s">json:&#34;email&#34;</span><span class="s">`</span>
+    <span class="nx">Password</span>  <span class="nx">password</span>  <span class="s">`</span><span class="s">json:&#34;-&#34;</span><span class="s">`</span>
+    <span class="nx">Activated</span> <span class="kt">bool</span>      <span class="s">`</span><span class="s">json:&#34;activated&#34;</span><span class="s">`</span>
+    <span class="nx">Version</span>   <span class="kt">int</span>       <span class="s">`</span><span class="s">json:&#34;-&#34;</span><span class="s">`</span>
+<span class="p">}</span>
+
+<span class="c1">// Check if a User instance is the AnonymousUser.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">u</span> <span class="o">*</span><span class="nx">User</span><span class="p">)</span> <span class="nf">IsAnonymous</span><span class="p">(</span><span class="p">)</span> <span class="kt">bool</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">u</span> <span class="o">==</span> <span class="nx">AnonymousUser</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>بنابراین در اینجا یک متغیر جدید <code>AnonymousUser</code> ایجاد کرده‌ایم که یک اشاره‌گر به یک struct <code>User</code> را نگهداری می‌کند که نشان‌دهنده یک <em>کاربر غیرفعال با شناسه، نام، ایمیل یا رمز عبور</em> است.</p>
+
+<p>همچنین یک متد <code>IsAnonymous()</code> روی struct <code>User</code> پیاده‌سازی کرده‌ایم تا هر زمان که یک نمونه <code>User</code> داریم بتوانیم به راحتی بررسی کنیم آیا نمونه <code>AnonymousUser</code> است یا خیر. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="nx">data</span><span class="p">.</span><span class="nx">AnonymousUser</span><span class="p">.</span><span class="nf">IsAnonymous</span><span class="p">(</span><span class="p">)</span> <span class="c1">// → Returns true
+</span><span class="c1"></span>
+<span class="nx">otherUser</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="nx">data</span><span class="p">.</span><span class="nx">User</span><span class="p">{</span><span class="p">}</span>
+<span class="nx">otherUser</span><span class="p">.</span><span class="nf">IsAnonymous</span><span class="p">(</span><span class="p">)</span>          <span class="c1">// → Returns false
+</span></pre>
+</figure>
+
+<h3 id="reading-and-writing-to-the-request-context">خواندن و نوشتن در request context</h3>
+
+<p>مرحله تنظیم دیگر، قبل از اینکه به ایجاد خود middleware <code>authenticate()</code> بپردازیم، مربوط به <em>ذخیره جزئیات کاربر در request context</em> است.</p>
+
+<p>ما در کتاب <em>Let's Go</em> به طور مفصل درباره اینکه request context چیست و چگونه از آن استفاده کنیم بحث کردیم و اگر هر قسمتی ناآشنا به نظر می‌رسد، توصیه می‌کنم قبل از ادامه آن بخش کتاب را مجدداً بخوانید. اما به عنوان یک یادآوری سریع:</p>
+
+<ul>
+<li><p>هر <code>http.Request</code> که برنامه ما پردازش می‌کند دارای یک <a href="https://golang.org/pkg/context/#Context"><code>context.Context</code></a> تعبیه شده است که می‌توانیم از آن برای ذخیره جفت‌های کلید-مقدار حاوی داده‌های دلخواه در طول عمر درخواست استفاده کنیم. در این مورد می‌خواهیم یک struct <code>User</code> حاوی اطلاعات کاربر فعلی ذخیره کنیم.</p></li>
+
+<li><p>هر مقداری که در request context ذخیره می‌شود نوع <code>any</code> دارد. این بدان معناست که پس از بازیابی یک مقدار از request context باید آن را به نوع اصلی خود برگردانید قبل از استفاده از آن.</p></li>
+
+<li><p>بهتر است از نوع سفارشی خود برای کلیدهای request context استفاده کنید. این به جلوگیری از تداخل نام‌ها بین کد شما و هر بسته شخص ثالثی که از request context برای ذخیره اطلاعات استفاده می‌کند کمک می‌کند.</p></li>
+</ul>
+
+<p>برای کمک به این کار، بیایید یک فایل جدید <code>cmd/api/context.go</code> ایجاد کنیم حاوی برخی متدهای کمکی برای خواندن/نوشتن struct <code>User</code> در request context و از آن.</p>
+
+<p>اگر در حال دنبال کردن هستید، فایل جدید را ایجاد کنید:</p>
+
+<figure class="code bash">
+<pre>$ touch cmd/api/context.go</pre>
+</figure>
+
+<p>و سپس کد زیر را اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/context.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;context&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+<span class="p">)</span>
+
+<span class="c1">// Define a custom contextKey type, with the underlying type string.
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">contextKey</span> <span class="kt">string</span>
+
+<span class="c1">// Convert the string &#34;user&#34; to a contextKey type and assign it to the userContextKey
+</span><span class="c1"></span><span class="c1">// constant. We&#39;ll use this constant as the key for getting and setting user information
+</span><span class="c1"></span><span class="c1">// in the request context.
+</span><span class="c1"></span><span class="kd">const</span> <span class="nx">userContextKey</span> <span class="p">=</span> <span class="nf">contextKey</span><span class="p">(</span><span class="s">&#34;user&#34;</span><span class="p">)</span>
+
+<span class="c1">// The contextSetUser() method returns a new copy of the request with the provided
+</span><span class="c1"></span><span class="c1">// User struct added to the context. Note that we use our userContextKey constant as the
+</span><span class="c1"></span><span class="c1">// key.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">contextSetUser</span><span class="p">(</span><span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">,</span> <span class="nx">user</span> <span class="o">*</span><span class="nx">data</span><span class="p">.</span><span class="nx">User</span><span class="p">)</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span> <span class="p">{</span>
+    <span class="nx">ctx</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithValue</span><span class="p">(</span><span class="nx">r</span><span class="p">.</span><span class="nf">Context</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="nx">userContextKey</span><span class="p">,</span> <span class="nx">user</span><span class="p">)</span>
+    <span class="k">return</span> <span class="nx">r</span><span class="p">.</span><span class="nf">WithContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// The contextGetUser() retrieves the User struct from the request context. The only
+</span><span class="c1"></span><span class="c1">// time that we&#39;ll use this helper is when we logically expect there to be User struct
+</span><span class="c1"></span><span class="c1">// value in the context, and if it doesn&#39;t exist it will firmly be a programmer error.
+</span><span class="c1"></span><span class="c1">// As we discussed earlier in the book, it&#39;s OK to panic in those circumstances.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">contextGetUser</span><span class="p">(</span><span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="o">*</span><span class="nx">data</span><span class="p">.</span><span class="nx">User</span> <span class="p">{</span>
+    <span class="nx">user</span><span class="p">,</span> <span class="nx">ok</span> <span class="o">:=</span> <span class="nx">r</span><span class="p">.</span><span class="nf">Context</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Value</span><span class="p">(</span><span class="nx">userContextKey</span><span class="p">)</span><span class="p">.</span><span class="p">(</span><span class="o">*</span><span class="nx">data</span><span class="p">.</span><span class="nx">User</span><span class="p">)</span>
+    <span class="k">if</span> <span class="p">!</span><span class="nx">ok</span> <span class="p">{</span>
+        <span class="nb">panic</span><span class="p">(</span><span class="s">&#34;missing user value in request context&#34;</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">user</span>
+<span class="p">}</span></pre>
+</figure>
+
+<h3 id="creating-the-authentication-middleware">ایجاد middleware احراز هویت</h3>
+
+<p>اکنون که این موارد را آماده کرده‌ایم، آماده‌ایم کار روی خود middleware <code>authenticate()</code> را شروع کنیم.</p>
+
+<p>فایل <code>cmd/api/middleware.go</code> خود را باز کنید و کد زیر را اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/middleware.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;errors&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+    <span class="s">&#34;strings&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;sync&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>      <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>
+    <span class="s">&#34;golang.org/x/time/rate&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">authenticate</span><span class="p">(</span><span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// Add the &#34;Vary: Authorization&#34; header to the response. This indicates to any
+</span><span class="c1"></span>        <span class="c1">// caches that the response may vary based on the value of the Authorization
+</span><span class="c1"></span>        <span class="c1">// header in the request.
+</span><span class="c1"></span>        <span class="nx">w</span><span class="p">.</span><span class="nf">Header</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="s">&#34;Vary&#34;</span><span class="p">,</span> <span class="s">&#34;Authorization&#34;</span><span class="p">)</span>
+
+        <span class="c1">// Retrieve the value of the Authorization header from the request. This will
+</span><span class="c1"></span>        <span class="c1">// return the empty string &#34;&#34; if there is no such header found.
+</span><span class="c1"></span>        <span class="nx">authorizationHeader</span> <span class="o">:=</span> <span class="nx">r</span><span class="p">.</span><span class="nx">Header</span><span class="p">.</span><span class="nf">Get</span><span class="p">(</span><span class="s">&#34;Authorization&#34;</span><span class="p">)</span>
+
+        <span class="c1">// If there is no Authorization header found, use the contextSetUser() helper
+</span><span class="c1"></span>        <span class="c1">// that we just made to add the AnonymousUser to the request context. Then we 
+</span><span class="c1"></span>        <span class="c1">// call the next handler in the chain and return without executing any of the
+</span><span class="c1"></span>        <span class="c1">// code below.
+</span><span class="c1"></span>        <span class="k">if</span> <span class="nx">authorizationHeader</span> <span class="o">==</span> <span class="s">&#34;&#34;</span> <span class="p">{</span>
+            <span class="nx">r</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">contextSetUser</span><span class="p">(</span><span class="nx">r</span><span class="p">,</span> <span class="nx">data</span><span class="p">.</span><span class="nx">AnonymousUser</span><span class="p">)</span>
+            <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Otherwise, we expect the value of the Authorization header to be in the format
+</span><span class="c1"></span>        <span class="c1">// &#34;Bearer &lt;token&gt;&#34;. We try to split this into its constituent parts, and if the
+</span><span class="c1"></span>        <span class="c1">// header isn&#39;t in the expected format we return a 401 Unauthorized response
+</span><span class="c1"></span>        <span class="c1">// using the invalidAuthenticationTokenResponse() helper (which we will create 
+</span><span class="c1"></span>        <span class="c1">// in a moment).
+</span><span class="c1"></span>        <span class="nx">headerParts</span> <span class="o">:=</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">Split</span><span class="p">(</span><span class="nx">authorizationHeader</span><span class="p">,</span> <span class="s">&#34; &#34;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="nx">headerParts</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span> <span class="o">||</span> <span class="nx">headerParts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">!=</span> <span class="s">&#34;Bearer&#34;</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">invalidAuthenticationTokenResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Extract the actual authentication token from the header parts.
+</span><span class="c1"></span>        <span class="nx">token</span> <span class="o">:=</span> <span class="nx">headerParts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+
+        <span class="c1">// Validate the token to make sure it is in a sensible format.
+</span><span class="c1"></span>        <span class="nx">v</span> <span class="o">:=</span> <span class="nx">validator</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+        <span class="c1">// If the token isn&#39;t valid, use the invalidAuthenticationTokenResponse() 
+</span><span class="c1"></span>        <span class="c1">// helper to send a response, rather than the failedValidationResponse() helper 
+</span><span class="c1"></span>        <span class="c1">// that we&#39;d normally use.
+</span><span class="c1"></span>        <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nf">ValidateTokenPlaintext</span><span class="p">(</span><span class="nx">v</span><span class="p">,</span> <span class="nx">token</span><span class="p">)</span><span class="p">;</span> <span class="p">!</span><span class="nx">v</span><span class="p">.</span><span class="nf">Valid</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">invalidAuthenticationTokenResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Retrieve the details of the user associated with the authentication token,
+</span><span class="c1"></span>        <span class="c1">// again calling the invalidAuthenticationTokenResponse() helper if no 
+</span><span class="c1"></span>        <span class="c1">// matching record was found. IMPORTANT: Notice that we are using 
+</span><span class="c1"></span>        <span class="c1">// ScopeAuthentication as the first parameter here.
+</span><span class="c1"></span>        <span class="nx">user</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nx">models</span><span class="p">.</span><span class="nx">Users</span><span class="p">.</span><span class="nf">GetForToken</span><span class="p">(</span><span class="nx">data</span><span class="p">.</span><span class="nx">ScopeAuthentication</span><span class="p">,</span> <span class="nx">token</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+            <span class="k">switch</span> <span class="p">{</span>
+            <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">data</span><span class="p">.</span><span class="nx">ErrRecordNotFound</span><span class="p">)</span><span class="p">:</span>
+                <span class="nx">app</span><span class="p">.</span><span class="nf">invalidAuthenticationTokenResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">default</span><span class="p">:</span>
+                <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+            <span class="p">}</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Call the contextSetUser() helper to add the user information to the request
+</span><span class="c1"></span>        <span class="c1">// context.
+</span><span class="c1"></span>        <span class="nx">r</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">contextSetUser</span><span class="p">(</span><span class="nx">r</span><span class="p">,</span> <span class="nx">user</span><span class="p">)</span>
+
+        <span class="c1">// Call the next handler in the chain.
+</span><span class="c1"></span>        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>کد زیادی در اینجا وجود دارد، بنابراین برای کمک به روشن شدن اوضاع، بیایید به سرعت اعمالی که این middleware انجام می‌دهد را مرور کنیم:</p>
+
+<ul>
+<li>اگر یک token احراز هویت معتبر در هدر <code>Authorization</code> ارائه شده باشد، یک struct <code>User</code> حاوی جزئیات کاربر مربوطه در request context ذخیره خواهد شد.</li>
+<li>اگر هیچ هدر <code>Authorization</code> ارائه نشده باشد، struct <code>AnonymousUser</code> ما در request context ذخیره خواهد شد.</li>
+<li>اگر هدر <code>Authorization</code> ارائه شده باشد، اما نادرست باشد یا مقدار غیرمعتبری داشته باشد، یک پاسخ <code>401 Unauthorized</code> با استفاده از متد کمکی <code>invalidAuthenticationTokenResponse()</code> برای کلاینت ارسال خواهد شد.</li>
+</ul>
+
+<p>صحبت از آن شد، بیایید به فایل <code>cmd/api/errors.go</code> خود برویم و آن متد کمکی را به صورت زیر ایجاد کنیم:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/errors.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">invalidAuthenticationTokenResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">w</span><span class="p">.</span><span class="nf">Header</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="s">&#34;WWW-Authenticate&#34;</span><span class="p">,</span> <span class="s">&#34;Bearer&#34;</span><span class="p">)</span>
+
+    <span class="nx">message</span> <span class="o">:=</span> <span class="s">&#34;invalid or missing authentication token&#34;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusUnauthorized</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> ما اینجا یک هدر <code>WWW-Authenticate: Bearer</code> اضافه می‌کنیم تا به کلاینت کمک کنیم بداند یا یادآوری کنیم که از ما انتظار داریم با استفاده از یک bearer token احراز هویت کند.
+</p></aside>
+
+<p>در نهایت، باید middleware <code>authenticate()</code> را به زنجیره handler خود اضافه کنیم. می‌خواهیم از این middleware روی <em>تمام</em> درخواست‌ها استفاده کنیم &mdash; بعد از middleware بازیابی panic و rate limiter، اما قبل از router.</p>
+
+<p>فایل <code>cmd/api/routes.go</code> خود را مطابق با آن به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">listMoviesHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPatch</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">updateMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodDelete</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">deleteMovieHandler</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/users&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">registerUserHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPut</span><span class="p">,</span> <span class="s">&#34;/v1/users/activated&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">activateUserHandler</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/tokens/authentication&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createAuthenticationTokenHandler</span><span class="p">)</span>
+
+    <span class="c1">// Use the authenticate() middleware on all requests.
+</span><span class="c1"></span>    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">rateLimit</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">authenticate</span><span class="p">(</span><span class="nx">router</span><span class="p">)</span><span class="p">)</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<h3 id="demonstration">نمایش</h3>
+
+<p>بیایید این را با ارسال یک درخواست <em>بدون</em> هدر <code>Authorization</code> تست کنیم. در پشت صحنه، middleware <code>authenticate()</code> ما <code>AnonymousUser</code> را به request context اضافه خواهد کرد و درخواست باید با موفقیت تکمیل شود. به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl localhost:4000/v1/healthcheck
+<samp>{
+    &#34;status&#34;: &#34;available&#34;,
+    &#34;system_info&#34;: {
+        &#34;environment&#34;: &#34;development&#34;,
+        &#34;version&#34;: &#34;1.0.0&#34;
+    }
+}</samp></pre>
+</figure>
+
+<p>سپس بیایید همان کار را امتحان کنیم، اما با یک token احراز هویت معتبر در هدر <code>Authorization</code>. این بار، جزئیات کاربر مربوطه باید به request context اضافه شود و باید دوباره یک پاسخ موفق دریافت کنیم. به عنوان مثال:</p>
+
+<figure class="code bash">
+<pre>$ curl -d &#39;{&#34;email&#34;: &#34;alice@example.com&#34;, &#34;password&#34;: &#34;pa55word&#34;}&#39; localhost:4000/v1/tokens/authentication
+<samp>{
+    &#34;authentication_token&#34;: {
+        &#34;token&#34;: &#34;FXCZM44TVLC6ML2NXTOW5OHFUE&#34;,
+        &#34;expiry&#34;: &#34;2021-04-17T12:20:30.02833444+02:00&#34;
+    }
+}</samp>
+
+$ curl -H &#34;Authorization: Bearer FXCZM44TVLC6ML2NXTOW5OHFUE&#34; localhost:4000/v1/healthcheck
+<samp>{
+    &#34;status&#34;: &#34;available&#34;,
+    &#34;system_info&#34;: {
+        &#34;environment&#34;: &#34;development&#34;,
+        &#34;version&#34;: &#34;1.0.0&#34;
+    }
+}</samp></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر در اینجا پاسخ خطا دریافت کردید، مطمئن شوید که از token احراز هویت صحیح درخواست اول در درخواست دوم استفاده می‌کنید.
+</p></aside>
+
+<p>در مقابل، می‌توانید ارسال برخی درخواست‌ها با یک token احراز هویت غیرمعتبر یا یک هدر <code>Authorization</code> نادرست را نیز امتحان کنید. در این موارد باید یک پاسخ <code>401 Unauthorized</code> دریافت کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl -i -H &#34;Authorization: Bearer XXXXXXXXXXXXXXXXXXXXXXXXXX&#34; localhost:4000/v1/healthcheck
+<samp>HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Vary: Authorization
+Www-Authenticate: Bearer
+Date: Fri, 16 Apr 2021 10:23:06 GMT
+Content-Length: 56
+
+{
+    &#34;error&#34;: &#34;invalid or missing authentication token&#34;
+}</samp>
+
+
+$ curl -i -H &#34;Authorization: INVALID&#34; localhost:4000/v1/healthcheck
+<samp>HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Vary: Authorization
+Www-Authenticate: Bearer
+Date: Fri, 16 Apr 2021 10:23:26 GMT
+Content-Length: 56
+
+{
+    &#34;error&#34;: &#34;invalid or missing authentication token&#34;
+}</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="15.02-generating-authentication-tokens.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="16.00-authorization.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "15.02-generating-authentication-tokens.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "16.00-authorization.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
