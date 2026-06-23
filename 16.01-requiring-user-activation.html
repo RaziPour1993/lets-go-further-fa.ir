@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>نیاز به فعال‌سازی کاربر &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="16.00-authorization.html">مجوز مبتنی بر نقش</a> &rsaquo; نیاز به فعال‌سازی کاربر</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="16.00-authorization.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="16.02-setting-up-the-permissions-database-table.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۶.۱.</div>
+			<h2 id="requiring-user-activation">نیاز به فعال‌سازی کاربر</h2>
+
+<p>همان‌طور که چند لحظه پیش ذکر کردیم، اولین کاری که از نظر authorization انجام خواهیم داد، محدود کردن دسترسی به endpointهای <code>/v1/movies**</code> است &mdash; به طوری که فقط کاربرانی که احراز هویت شده‌اند (ناشناس نیستند) و حساب خود را فعال کرده‌اند بتوانند به آن‌ها دسترسی داشته باشند.</p>
+
+<p>انجام این نوع بررسی‌ها یک کار ایده‌آل برای middleware است، پس بیایید وارد شویم و یک متد middleware جدید <code>requireActivatedUser()</code> برای مدیریت این موضوع بسازیم. در این middleware، می‌خواهیم struct <code>User</code> را از request context استخراج کنیم و سپس متد <code>IsAnonymous()</code> و فیلد <code>Activated</code> را بررسی کنیم تا تعیین کنیم آیا request باید ادامه یابد یا خیر.</p>
+
+<p>به طور خاص:</p>
+
+<ul>
+<li>اگر کاربر ناشناس باشد باید پاسخ <code>401 Unauthorized</code> و پیام خطایی با مضمون <code style="white-space: normal;">&ldquo;you must be authenticated to access this resource&rdquo;</code> ارسال کنیم.</li>
+<li>اگر کاربر ناشناس نباشد (یعنی با موفقیت احراز هویت شده و می‌دانیم کیست)، اما <em>فعال نشده باشد</em> باید پاسخ <code>403 Forbidden</code> و پیام خطایی با مضمون <code style="white-space: normal;">&ldquo;your user account must be activated to access this resource&rdquo;</code> ارسال کنیم.</li>
+</ul>
+
+<aside class="hint"><p>
+<strong>به یاد داشته باشید:</strong> پاسخ <code>401 Unauthorized</code> باید زمانی استفاده شود که authentication شما ناقص یا نادرست است، و پاسخ <code>403 Forbidden</code> باید پس از آن استفاده شود، زمانی که کاربر احراز هویت شده اما اجازه انجام عملیات درخواستی را ندارد.
+</p></aside>
+
+<p>پس ابتدا، بیایید به فایل <code>cmd/api/errors.go</code> برویم و چند helper جدید برای ارسال این پیام‌های خطا اضافه کنیم. به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/errors.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">authenticationRequiredResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">message</span> <span class="o">:=</span> <span class="s">&#34;you must be authenticated to access this resource&#34;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusUnauthorized</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">inactiveAccountResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">message</span> <span class="o">:=</span> <span class="s">&#34;your user account must be activated to access this resource&#34;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusForbidden</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>و سپس بیایید middleware جدید <code>requireActivatedUser()</code> را برای انجام بررسی‌ها بسازیم. کدی که نیاز داریم ساده و مختصر است:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/middleware.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// Use the contextGetUser() helper that we made earlier to retrieve the user 
+</span><span class="c1"></span>        <span class="c1">// information from the request context.
+</span><span class="c1"></span>        <span class="nx">user</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">contextGetUser</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+
+        <span class="c1">// If the user is anonymous, then call the authenticationRequiredResponse() to 
+</span><span class="c1"></span>        <span class="c1">// inform the client that they should authenticate before trying again.
+</span><span class="c1"></span>        <span class="k">if</span> <span class="nx">user</span><span class="p">.</span><span class="nf">IsAnonymous</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">authenticationRequiredResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// If the user is not activated, use the inactiveAccountResponse() helper to 
+</span><span class="c1"></span>        <span class="c1">// inform them that they need to activate their account.
+</span><span class="c1"></span>        <span class="k">if</span> <span class="p">!</span><span class="nx">user</span><span class="p">.</span><span class="nx">Activated</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">inactiveAccountResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Call the next handler in the chain.
+</span><span class="c1"></span>        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>توجه کنید که middleware <code>requireActivatedUser()</code> ما امضای کمی متفاوت نسبت به middlewareهای دیگری که در این کتاب ساخته‌ایم دارد. به جای پذیرش و بازگرداندن <code>http.Handler</code>، <code>http.HandlerFunc</code> را پذیرفته و بازمی‌گرداند.</p>
+
+<p>این یک تغییر کوچک است، اما این امکان را فراهم می‌کند که توابع handler <code>/v1/movie**</code> خود را مستقیماً با این middleware پوشش دهیم، بدون نیاز به تبدیل‌های بیشتر.</p>
+
+<p>فایل <code>cmd/api/routes.go</code> را به‌روز کنید تا دقیقاً همین کار را انجام دهید، به شرح زیر:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+
+    <span class="c1">// Use the requireActivatedUser() middleware on our five /v1/movies** endpoints.
+</span><span class="c1"></span>    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">listMoviesHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPatch</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">updateMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodDelete</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">deleteMovieHandler</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/users&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">registerUserHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPut</span><span class="p">,</span> <span class="s">&#34;/v1/users/activated&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">activateUserHandler</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/tokens/authentication&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createAuthenticationTokenHandler</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">rateLimit</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">authenticate</span><span class="p">(</span><span class="nx">router</span><span class="p">)</span><span class="p">)</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<h3 id="demonstration">نمایش</h3>
+
+<p>خب، بیایید این تغییرات را امتحان کنیم!</p>
+
+<p>با فراخوانی endpoint <code>GET /v1/movies/:id</code> به عنوان یک کاربر ناشناس شروع می‌کنیم. با انجام این کار باید اکنون پاسخ <code>401 Unauthorized</code> دریافت کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl -i localhost:4000/v1/movies/1
+<samp>HTTP/1.1 401 Unauthorized
+Content-Type: application/json
+Vary: Authorization
+Www-Authenticate: Bearer
+Date: Fri, 16 Apr 2021 15:59:33 GMT
+Content-Length: 66
+
+{
+    &#34;error&#34;: &#34;you must be authenticated to access this resource&#34;
+}</samp></pre>
+</figure>
+
+<p>سپس، بیایید سعی کنیم درخواستی به عنوان کاربری که حساب دارد اما هنوز فعال نشده ارسال کنیم. اگر همراه ما بوده‌اید، باید بتوانید از کاربر <code>alice@example.com</code> برای این کار استفاده کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;email&#34;: &#34;alice@example.com&#34;, &#34;password&#34;: &#34;pa55word&#34;}&#39;
+$ curl -d &#34;$BODY&#34; localhost:4000/v1/tokens/authentication
+<samp>{
+    &#34;authentication_token&#34;: {
+        &#34;token&#34;: &#34;2O4YHHWDHVVWWDNKN2UZR722BU&#34;,
+        &#34;expiry&#34;: &#34;2021-04-17T18:03:09.598843181+02:00&#34;
+    }
+}</samp>
+
+$ curl -i -H &#34;Authorization: Bearer 2O4YHHWDHVVWWDNKN2UZR722BU&#34; localhost:4000/v1/movies/1
+<samp>HTTP/1.1 403 Forbidden
+Content-Type: application/json
+Vary: Authorization
+Date: Fri, 16 Apr 2021 16:03:45 GMT
+Content-Length: 76
+
+{
+    &#34;error&#34;: &#34;your user account must be activated to access this resource&#34;
+}</samp></pre>
+</figure>
+
+<p>عالی، می‌بینیم که این اکنون منجر به پاسخ <code>403 Forbidden</code> از helper جدید <code>inactiveAccountResponse()</code> ما می‌شود.</p>
+
+<p>در نهایت، بیایید سعی کنیم درخواستی به عنوان یک کاربر فعال ارسال کنیم.</p>
+
+<p>اگر همراه ما کدنویسی می‌کنید، ممکن است بخواهید به سرعت به دیتابیس PostgreSQL خود متصل شوید و بررسی کنید کدام کاربران قبلاً فعال شده‌اند.</p>
+
+<figure class="code bash">
+<pre>$ psql $GREENLIGHT_DB_DSN 
+<samp>psql (15.4 (Ubuntu 15.4-1.pgdg22.04+1))
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+Type &#34;help&#34; for help.</samp>
+
+greenlight=&gt; SELECT email FROM users WHERE activated = true;
+<samp>       email       
+-------------------
+ faith@example.com
+(1 row)</samp></pre>
+</figure>
+
+<p>در مورد من، تنها کاربر فعال <code>faith@example.com</code> است، پس بیایید سعی کنیم درخواستی به عنوان او ارسال کنیم. هنگام ارسال درخواست به عنوان یک کاربر فعال، تمام بررسی‌های middleware <code>requireActivatedUser()</code> ما رد شده و باید پاسخ موفقی دریافت کنید. مشابه این:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;email&#34;: &#34;faith@example.com&#34;, &#34;password&#34;: &#34;pa55word&#34;}&#39;
+$ curl -d &#34;$BODY&#34; localhost:4000/v1/tokens/authentication
+<samp>{
+    &#34;authentication_token&#34;: {
+        &#34;token&#34;: &#34;ZFIKQ344EYM5KEP6JL2RHLRPJQ&#34;,
+        &#34;expiry&#34;: &#34;2021-04-17T18:04:57.513348573+02:00&#34;
+    }
+}</samp>
+
+$ curl -H &#34;Authorization: Bearer ZFIKQ344EYM5KEP6JL2RHLRPJQ&#34; localhost:4000/v1/movies/1
+<samp>{
+    &#34;movie&#34;: {
+        &#34;id&#34;: 1,
+        &#34;title&#34;: &#34;Moana&#34;,
+        &#34;year&#34;: 2016,
+        &#34;runtime&#34;: &#34;107 mins&#34;,
+        &#34;genres&#34;: [
+            &#34;animation&#34;,
+            &#34;adventure&#34;
+        ],
+        &#34;version&#34;: 1
+    }
+}</samp></pre>
+</figure>
+
+<h3 id="splitting-up-the-middleware">تقسیم کردن middleware</h3>
+
+<p>در حال حاضر ما یک middleware داریم که دو بررسی انجام می‌دهد: ابتدا بررسی می‌کند که کاربر احراز هویت شده (ناشناس نیست) و سپس بررسی می‌کند که فعال شده است.</p>
+
+<p>اما می‌توان سناریویی را تصور کرد که در آن <em>فقط</em> می‌خواهید بررسی کنید که آیا کاربر احراز هویت شده و به فعال بودن یا نبودن او اهمیتی نمی‌دهید. برای کمک به این موضوع، ممکن است بخواهید علاوه بر middleware فعلی <code>requireActivatedUser()</code>، یک middleware اضافی <code>requireAuthenticatedUser()</code> نیز معرفی کنید.</p>
+
+<p>با این حال، بین این دو middleware همپوشانی وجود خواهد داشت، زیرا هر دو بررسی می‌کنند که آیا کاربر احراز هویت شده یا خیر. روشی تمیز برای جلوگیری از این تکرار این است که middleware <code>requireActivatedUser()</code> شما به طور خودکار middleware <code>requireAuthenticatedUser()</code> را فراخوانی کند.</p>
+
+<p>توصیف این الگو با کلمات دشوار است، پس آن را نشان می‌دهم. اگر همراه ما هستید، فایل <code>cmd/api/middleware.go</code> خود را به این صورت به‌روز کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/middleware.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Create a new requireAuthenticatedUser() middleware to check that a user is not 
+</span><span class="c1"></span><span class="c1">// anonymous.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">requireAuthenticatedUser</span><span class="p">(</span><span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">user</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">contextGetUser</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+
+        <span class="k">if</span> <span class="nx">user</span><span class="p">.</span><span class="nf">IsAnonymous</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">authenticationRequiredResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// Checks that a user is both authenticated and activated.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span> <span class="p">{</span>
+    <span class="c1">// Rather than returning this http.HandlerFunc we assign it to the variable fn.
+</span><span class="c1"></span>    <span class="nx">fn</span> <span class="o">:=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">user</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">contextGetUser</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+
+        <span class="c1">// Check that a user is activated.
+</span><span class="c1"></span>        <span class="k">if</span> <span class="p">!</span><span class="nx">user</span><span class="p">.</span><span class="nx">Activated</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">inactiveAccountResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span>
+
+    <span class="c1">// Wrap fn with the requireAuthenticatedUser() middleware before returning it.
+</span><span class="c1"></span>    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requireAuthenticatedUser</span><span class="p">(</span><span class="nx">fn</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به روشی که این را تنظیم کرده‌ایم، middleware <code>requireActivatedUser()</code> ما اکنون به طور خودکار middleware <code>requireAuthenticatedUser()</code> را <em>قبل از اجرای خودش</em> فراخوانی می‌کند. در برنامه ما این منطقی است &mdash; نباید بررسی کنیم آیا کاربر فعال شده مگر اینکه دقیقاً بدانیم کیست!</p>
+
+<p>اکنون می‌توانید برنامه را دوباره اجرا کنید &mdash; همه چیز باید کامپایل شده و دقیقاً مانند قبل کار کند.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات اضافی</h3>
+
+<h4 id="in-handler-checks">بررسی‌های درون handler</h4>
+
+<p>اگر فقط چند endpoint دارید که می‌خواهید بررسی‌های authorization را روی آن‌ها انجام دهید، به جای استفاده از middleware معمولاً راحت‌تر است بررسی‌ها را داخل handlerهای مربوطه انجام دهید. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">exampleHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">user</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">contextGetUser</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nx">user</span><span class="p">.</span><span class="nf">IsAnonymous</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">authenticationRequiredResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="p">!</span><span class="nx">user</span><span class="p">.</span><span class="nx">Activated</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">inactiveAccountResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+    
+    <span class="c1">// The rest of the handler logic goes here...
+</span><span class="c1"></span><span class="p">}</span></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="16.00-authorization.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="16.02-setting-up-the-permissions-database-table.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "16.00-authorization.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "16.02-setting-up-the-permissions-database-table.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

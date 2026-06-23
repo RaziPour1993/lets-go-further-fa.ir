@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>مجوز مبتنی بر نقش &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; مجوز مبتنی بر نقش</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="15.03-authenticating-requests.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="16.01-requiring-user-activation.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۶.</div>
+			<h1 id="permission-based-authorization">مجوز مبتنی بر نقش</h1>
+
+<p>زمانی که یک درخواست از middleware <code>authenticate()</code> ما خارج می‌شود، دو حالت ممکن برای context درخواست وجود دارد. یا:</p>
+
+<ul>
+<li>Context درخواست شامل یک struct <code>User</code> است (که نشان‌دهنده یک کاربر معتبر و احراز هویت شده است).</li>
+<li>یا context درخواست شامل یک struct <code>AnonymousUser</code> است.</li>
+</ul>
+
+<p>در این بخش از کتاب، ما این موضوع را به مرحله طبیعی بعدی می‌رسانیم و بررسی می‌کنیم که چگونه می‌توان بررسی‌های مختلف <em>مجوز</em> را برای محدود کردن دسترسی به endpoint های API خود انجام داد. به طور خاص، یاد خواهید گرفت که چگونه:</p>
+
+<ul>
+<li><p>بررسی‌ها را اضافه کنید تا فقط <em>کاربران فعال</em> بتوانند به endpoint های مختلف <code>/v1/movies**</code> دسترسی داشته باشند.</p></li>
+
+<li><p>الگوی <em>مجوز مبتنی بر نقش</em> را پیاده‌سازی کنید، که کنترل دقیقی بر روی اینکه <em>کدام کاربران به کدام endpoint ها دسترسی دارند</em> فراهم می‌کند.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="15.03-authenticating-requests.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="16.01-requiring-user-activation.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "15.03-authenticating-requests.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "16.01-requiring-user-activation.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

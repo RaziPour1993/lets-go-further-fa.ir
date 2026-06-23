@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>بررسی مجوزها &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="16.00-authorization.html">مجوز مبتنی بر نقش</a> &rsaquo; بررسی مجوزها</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="16.03-setting-up-the-permissions-model.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="16.05-granting-permissions.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۶.۴.</div>
+			<h2 id="checking-permissions">بررسی مجوزها</h2>
+
+<p>اکنون که <code>PermissionModel</code> ما راه‌اندازی شده است، بیایید بررسی کنیم چگونه می‌توانیم از آن برای محدود کردن دسترسی به endpointهای API خود استفاده کنیم.</p>
+
+<p>از نظر مفهومی، کاری که اینجا باید انجام دهیم خیلی پیچیده نیست.</p>
+
+<ul>
+<li>یک middleware جدید به نام <code>requirePermission()</code> می‌سازیم که یک کد مجوز خاص مانند <code>&quot;movies:read&quot;</code> را به عنوان آرگومان دریافت می‌کند.</li>
+<li>در این middleware، کاربر فعلی را از context درخواست بازیابی کرده و متد <code>app.models.Permissions.GetAllForUser()</code> (که همین الان ساختیم) را فراخوانی می‌کنیم تا لیست مجوزهای او را دریافت کنیم.</li>
+<li>سپس بررسی می‌کنیم آیا لیست حاوی کد مجوز مورد نیاز است یا خیر. اگر نباشد، باید پاسخ <code>403 Forbidden</code> به client ارسال کنیم.</li>
+</ul>
+
+<p>برای پیاده‌سازی این مورد، ابتدا یک تابع کمکی جدید <code>notPermittedResponse()</code> برای ارسال پاسخ <code>403 Forbidden</code> می‌سازیم. به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/errors.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">notPermittedResponse</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">message</span> <span class="o">:=</span> <span class="s">&#34;your user account doesn&#39;t have the necessary permissions to access this resource&#34;</span>
+    <span class="nx">app</span><span class="p">.</span><span class="nf">errorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusForbidden</span><span class="p">,</span> <span class="nx">message</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>سپس به فایل <code>cmd/api/middleware.go</code> می‌رویم و middleware جدید <code>requirePermission()</code> را ایجاد می‌کنیم.</p>
+
+<p>این را به صورتی تنظیم می‌کنیم که middleware <code>requirePermission()</code> به طور خودکار middleware موجود <code>requireActivatedUser()</code> ما را در بر بگیرد، که به نوبه خود &mdash; فراموش نکنید &mdash; middleware <code>requireAuthenticatedUser()</code> ما را در بر می‌گیرد.</p>
+
+<p>این مهم است &mdash; یعنی وقتی از middleware <code>requirePermission()</code> استفاده می‌کنیم، در واقع <em>سه بررسی</em> انجام می‌دهیم که مجموعاً تضمین می‌کنند درخواست از یک <em>کاربر احراز هویت شده (غیرناشناس) و فعال است، که یک مجوز خاص دارد</em>.</p>
+
+<p>بیایید این را در فایل <code>cmd/api/middleware.go</code> به این صورت ایجاد کنیم:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/middleware.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Note that the first parameter for the middleware function is the permission code that
+</span><span class="c1"></span><span class="c1">// we require the user to have.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">requirePermission</span><span class="p">(</span><span class="nx">code</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">HandlerFunc</span> <span class="p">{</span>
+    <span class="nx">fn</span> <span class="o">:=</span> <span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// Retrieve the user from the request context.
+</span><span class="c1"></span>        <span class="nx">user</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">contextGetUser</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+
+        <span class="c1">// Get the slice of permissions for the user.
+</span><span class="c1"></span>        <span class="nx">permissions</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nx">models</span><span class="p">.</span><span class="nx">Permissions</span><span class="p">.</span><span class="nf">GetAllForUser</span><span class="p">(</span><span class="nx">user</span><span class="p">.</span><span class="nx">ID</span><span class="p">)</span>
+        <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Check if the slice includes the required permission. If it doesn&#39;t, then 
+</span><span class="c1"></span>        <span class="c1">// return a 403 Forbidden response.
+</span><span class="c1"></span>        <span class="k">if</span> <span class="p">!</span><span class="nx">permissions</span><span class="p">.</span><span class="nf">Include</span><span class="p">(</span><span class="nx">code</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">notPermittedResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+            <span class="k">return</span>
+        <span class="p">}</span>
+
+        <span class="c1">// Otherwise they have the required permission so we call the next handler in
+</span><span class="c1"></span>        <span class="c1">// the chain.
+</span><span class="c1"></span>        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Wrap this with the requireActivatedUser() middleware before returning it.
+</span><span class="c1"></span>    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requireActivatedUser</span><span class="p">(</span><span class="nx">fn</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>پس از اتمام کار، مرحله نهایی به‌روزرسانی فایل <code>cmd/api/routes.go</code> برای استفاده از middleware جدید روی endpointهای مورد نیاز است.</p>
+
+<p>مسیرها را به‌روزرسانی کنید به طوری که API ما مجوز <code>&quot;movies:read&quot;</code> را برای endpointهایی که داده فیلم را واکشی می‌کنند و مجوز <code>&quot;movies:write&quot;</code> را برای endpointهایی که فیلم ایجاد، ویرایش یا حذف می‌کنند، الزامی کند.</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+
+    <span class="c1">// Use the requirePermission() middleware on each of the /v1/movies** endpoints,
+</span><span class="c1"></span>    <span class="c1">// passing in the required permission code as the first parameter.
+</span><span class="c1"></span>    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:read&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">listMoviesHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:write&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:read&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPatch</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:write&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">updateMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodDelete</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:write&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">deleteMovieHandler</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/users&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">registerUserHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPut</span><span class="p">,</span> <span class="s">&#34;/v1/users/activated&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">activateUserHandler</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/tokens/authentication&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createAuthenticationTokenHandler</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">rateLimit</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">authenticate</span><span class="p">(</span><span class="nx">router</span><span class="p">)</span><span class="p">)</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<h3 id="demonstration">نمایش عملی</h3>
+
+<p>نمایش این قابلیت در عمل کمی دشوار است زیرا اگر از ابتدا همراه بوده باشید، هیچ‌یک از کاربران فعلی پایگاه داده ما مجوزی برای آن‌ها تنظیم نشده است.</p>
+
+<p>برای کمک به نمایش این قابلیت جدید، <code>psql</code> را باز کرده و برخی مجوزها را اضافه می‌کنیم. به طور خاص، ما:</p>
+
+<ul>
+<li>کاربر <code>alice@example.com</code> را فعال می‌کنیم.</li>
+<li>به <em>همه</em> کاربران مجوز <code>&quot;movies:read&quot;</code> را می‌دهیم.</li>
+<li>به کاربر <code>faith@example.com</code> مجوز <code>&quot;movies:write&quot;</code> را می‌دهیم.</li>
+</ul>
+
+<p>اگر همراه ما هستید، پرامپت <code>psql</code> خود را باز کنید:</p>
+
+<figure class="code bash">
+<pre>$ psql $GREENLIGHT_DB_DSN
+Password for user greenlight: 
+<samp>psql (15.4 (Ubuntu 15.4-1.pgdg22.04+1))
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+Type &#34;help&#34; for help.</samp>
+
+greenlight=&gt;</pre>
+</figure>
+
+<p>و دستورات زیر را اجرا کنید:</p>
+
+<figure class="code sql">
+<pre><span class="c1">-- Set the activated field for alice@example.com to true.
+</span><span class="c1"></span><span class="k">UPDATE</span> <span class="n">users</span> <span class="k">SET</span> <span class="n">activated</span> <span class="o">=</span> <span class="k">true</span> <span class="k">WHERE</span> <span class="n">email</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="s1">alice@example.com</span><span class="s1">&#39;</span><span class="p">;</span>
+
+<span class="c1">-- Give all users the &#39;movies:read&#39; permission
+</span><span class="c1"></span><span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">users_permissions</span>
+<span class="k">SELECT</span> <span class="n">id</span><span class="p">,</span> <span class="p">(</span><span class="k">SELECT</span> <span class="n">id</span> <span class="k">FROM</span> <span class="n">permissions</span> <span class="k">WHERE</span> <span class="n">code</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="s1">movies:read</span><span class="s1">&#39;</span><span class="p">)</span> <span class="k">FROM</span> <span class="n">users</span><span class="p">;</span>
+
+<span class="c1">-- Give faith@example.com the &#39;movies:write&#39; permission
+</span><span class="c1"></span><span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">users_permissions</span>
+<span class="k">VALUES</span> <span class="p">(</span>
+    <span class="p">(</span><span class="k">SELECT</span> <span class="n">id</span> <span class="k">FROM</span> <span class="n">users</span> <span class="k">WHERE</span> <span class="n">email</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="s1">faith@example.com</span><span class="s1">&#39;</span><span class="p">)</span><span class="p">,</span>
+    <span class="p">(</span><span class="k">SELECT</span> <span class="n">id</span> <span class="k">FROM</span> <span class="n">permissions</span> <span class="k">WHERE</span>  <span class="n">code</span> <span class="o">=</span> <span class="s1">&#39;</span><span class="s1">movies:write</span><span class="s1">&#39;</span><span class="p">)</span>
+<span class="p">)</span><span class="p">;</span>
+
+<span class="c1">-- List all activated users and their permissions.
+</span><span class="c1"></span><span class="k">SELECT</span> <span class="n">email</span><span class="p">,</span> <span class="n">array_agg</span><span class="p">(</span><span class="n">permissions</span><span class="p">.</span><span class="n">code</span><span class="p">)</span> <span class="k">as</span> <span class="n">permissions</span>
+<span class="k">FROM</span> <span class="n">permissions</span>
+<span class="k">INNER</span> <span class="k">JOIN</span> <span class="n">users_permissions</span> <span class="k">ON</span> <span class="n">users_permissions</span><span class="p">.</span><span class="n">permission_id</span> <span class="o">=</span> <span class="n">permissions</span><span class="p">.</span><span class="n">id</span>
+<span class="k">INNER</span> <span class="k">JOIN</span> <span class="n">users</span> <span class="k">ON</span> <span class="n">users_permissions</span><span class="p">.</span><span class="n">user_id</span> <span class="o">=</span> <span class="n">users</span><span class="p">.</span><span class="n">id</span>
+<span class="k">WHERE</span> <span class="n">users</span><span class="p">.</span><span class="n">activated</span> <span class="o">=</span> <span class="k">true</span>
+<span class="k">GROUP</span> <span class="k">BY</span> <span class="n">email</span><span class="p">;</span></pre>
+</figure>
+
+<p>پس از اتمام، باید لیستی از کاربران فعال فعلی و مجوزهایشان را ببینید، مشابه این:</p>
+
+<figure class="code bash">
+<pre><samp>       email       |        permissions         
+-------------------+----------------------------
+ alice@example.com | {movies:read}
+ faith@example.com | {movies:read,movies:write}
+(2 rows)</samp></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> در آن query نهایی SQL، از تابع تجمعی <a href="https://www.postgresql.org/docs/current/functions-aggregate.html"><code>array_agg()</code></a> و عبارت <code>GROUP BY</code> برای خروجی دادن مجوزهای مرتبط با هر آدرس ایمیل به صورت آرایه استفاده می‌کنیم.
+</p></aside>
+
+<p>اکنون که کاربران ما مجوزهایی دریافت کرده‌اند، آماده آزمایش هستیم.</p>
+
+<p>برای شروع، بیایید چند درخواست به عنوان <code>alice@example.com</code> به endpointهای <code>GET /v1/movies/1</code> و <code>DELETE /v1/movies/1</code> ارسال کنیم. درخواست اول باید به درستی کار کند، اما درخواست دوم باید ناموفق باشد زیرا کاربر مجوز لازم <code>movies:write</code> را ندارد.</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;email&#34;: &#34;alice@example.com&#34;, &#34;password&#34;: &#34;pa55word&#34;}&#39;
+$ curl -d &#34;$BODY&#34; localhost:4000/v1/tokens/authentication
+<samp>{
+    &#34;authentication_token&#34;: {
+        &#34;token&#34;: &#34;OPFXEPOYZWMGNWXWKMYIMEGATU&#34;,
+        &#34;expiry&#34;: &#34;2021-04-17T20:49:39.963768416+02:00&#34;
+    }
+}</samp>
+
+$ curl -H &#34;Authorization: Bearer OPFXEPOYZWMGNWXWKMYIMEGATU&#34; localhost:4000/v1/movies/1
+<samp>{
+    &#34;movie&#34;: {
+        &#34;id&#34;: 1,
+        &#34;title&#34;: &#34;Moana&#34;,
+        &#34;year&#34;: 2016,
+        &#34;runtime&#34;: &#34;107 mins&#34;,
+        &#34;genres&#34;: [
+            &#34;animation&#34;,
+            &#34;adventure&#34;
+        ],
+        &#34;version&#34;: 1
+    }
+}</samp>
+
+$ curl -X DELETE -H &#34;Authorization: Bearer OPFXEPOYZWMGNWXWKMYIMEGATU&#34; localhost:4000/v1/movies/1
+<samp>{
+    &#34;error&#34;: &#34;your user account doesn&#39;t have the necessary permissions to access this resource&#34;
+}</samp></pre>
+</figure>
+
+<p>عالی است، دقیقاً مطابق انتظار کار می‌کند &mdash; عملیات <code>DELETE</code> مسدود شده است زیرا <code>alice@example.com</code> مجوز لازم <code>movies:write</code> را ندارد.</p>
+
+<p>در مقابل، بیایید همان عملیات را اما با کاربر <code>faith@example.com</code> امتحان کنیم. این بار عملیات <code>DELETE</code> باید به درستی کار کند، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;email&#34;: &#34;faith@example.com&#34;, &#34;password&#34;: &#34;pa55word&#34;}&#39;
+$ curl -d &#34;$BODY&#34; localhost:4000/v1/tokens/authentication
+<samp>{
+    &#34;authentication_token&#34;: {
+        &#34;token&#34;: &#34;E42XD5OBBBO4MPUPYGLLY2GURE&#34;,
+        &#34;expiry&#34;: &#34;2021-04-17T20:51:14.924813208+02:00&#34;
+    }
+}</samp>
+
+$ curl -X DELETE -H &#34;Authorization: Bearer E42XD5OBBBO4MPUPYGLLY2GURE&#34; localhost:4000/v1/movies/1
+<samp>{
+    &#34;message&#34;: &#34;movie successfully deleted&#34;
+}</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="16.03-setting-up-the-permissions-model.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="16.05-granting-permissions.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "16.03-setting-up-the-permissions-model.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "16.05-granting-permissions.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

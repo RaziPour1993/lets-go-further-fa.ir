@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی جدول پایگاه داده مجوزها  &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="16.00-authorization.html">مجوز مبتنی بر نقش</a> &rsaquo; راه‌اندازی جدول پایگاه داده مجوزها </span>
+					
+				
+				</div>
+				<div>
+					&lsaquo; <a href="16.01-requiring-user-activation.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="16.03-setting-up-the-permissions-model.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۶.۲.</div>
+			<h2 id="setting-up-the-permissions-database-table">راه‌اندازی جدول پایگاه داده مجوزها</h2>
+
+<p>محدود کردن API به طوری که داده‌های فیلم فقط توسط کاربران فعال قابل دسترسی و ویرایش باشد، مفید است، اما گاهی اوقات ممکن است به سطح کنترل دقیق‌تری نیاز داشته باشید. به عنوان مثال، در مورد ما ممکن است راضی باشیم که کاربران «عادی» API ما بتوانند داده‌های فیلم را <em>بخوانند</em> (به شرطی که فعال باشند)، اما می‌خواهیم دسترسی <em>نوشتن</em> را به زیرمجموعه کوچکی از کاربران مورد اعتماد محدود کنیم.</p>
+
+<p>در این فصل، مفهوم <em>مجوزها</em> (permissions) را به برنامه خود معرفی می‌کنیم، به طوری که فقط کاربرانی که مجوز خاصی دارند بتوانند عملیات خاصی انجام دهند. در مورد ما، دو مجوز ایجاد خواهیم کرد: مجوز <code>movies:read</code> که به کاربر اجازه می‌دهد فیلم‌ها را دریافت و فیلتر کند، و مجوز <code>movies:write</code> که به کاربران اجازه می‌دهد فیلم‌ها را ایجاد، ویرایش و حذف کنند.</p>
+
+<p>مجوزهای مورد نیاز با endpoint‌های API ما به شرح زیر هماهنگ هستند:</p>
+
+<table>
+<thead>
+<tr>
+<th>متد</th>
+<th>الگوی URL</th>
+<th>مجوز مورد نیاز</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>GET</td>
+<td>/v1/healthcheck</td>
+<td>&mdash;</td>
+</tr>
+
+<tr>
+<td>GET</td>
+<td>/v1/movies</td>
+<td><code>movies:read</code></td>
+</tr>
+
+<tr>
+<td>POST</td>
+<td>/v1/movies</td>
+<td><code>movies:write</code></td>
+</tr>
+
+<tr>
+<td>GET</td>
+<td>/v1/movies/:id</td>
+<td><code>movies:read</code></td>
+</tr>
+
+<tr>
+<td>PATCH</td>
+<td>/v1/movies/:id</td>
+<td><code>movies:write</code></td>
+</tr>
+
+<tr>
+<td>DELETE</td>
+<td>/v1/movies/:id</td>
+<td><code>movies:write</code></td>
+</tr>
+
+<tr>
+<td>POST</td>
+<td>/v1/users</td>
+<td>&mdash;</td>
+</tr>
+
+<tr>
+<td>PUT</td>
+<td>/v1/users/activated</td>
+<td>&mdash;</td>
+</tr>
+
+<tr>
+<td>POST</td>
+<td>/v1/tokens/authentication</td>
+<td>&mdash;</td>
+</tr>
+</tbody>
+</table>
+
+<h3 id="relationship-between-permissions-and-users">رابطه بین مجوزها و کاربران</h3>
+
+<p>رابطه بین مجوزها و کاربران نمونه عالی از یک رابطه <em>چند به چند</em> است. یک کاربر ممکن است <em>مجوزهای متعددی</em> داشته باشد و همان مجوز ممکن است به <em>کاربران متعددی</em> تعلق داشته باشد.</p>
+
+<p>روش کلاسیک مدیریت رابطه چند به چند در یک پایگاه داده رابطه‌ای مانند PostgreSQL، ایجاد یک <em>جدول اتصال</em> (joining table) بین دو موجودیت است. من به سرعت توضیح می‌دهم که این چگونه کار می‌کند.</p>
+
+<p>فرض کنید داده‌های کاربران خود را در یک جدول <code>users</code> ذخیره می‌کنیم که به این شکل است:</p>
+
+<table>
+<thead>
+<tr>
+<th>id</th>
+<th>email</th>
+<th>&hellip;</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>alice@example.com</td>
+<td>&hellip;</td>
+</tr>
+
+<tr>
+<td>2</td>
+<td>bob@example.com</td>
+<td>&hellip;</td>
+</tr>
+</tbody>
+</table>
+<p>و داده‌های مجوزهای ما در یک جدول <code>permissions</code> به این شکل ذخیره می‌شوند:</p>
+
+<table>
+<thead>
+<tr>
+<th>id</th>
+<th>code</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>movies:read</td>
+</tr>
+
+<tr>
+<td>2</td>
+<td>movies:write</td>
+</tr>
+</tbody>
+</table>
+<p>سپس می‌توانیم یک جدول اتصال به نام <code>users_permissions</code> ایجاد کنیم تا اطلاعات مربوط به <em>کدام کاربران چه مجوزهایی دارند</em> را ذخیره کند، مشابه این:</p>
+
+<table>
+<thead>
+<tr>
+<th>user_id</th>
+<th>permission_id</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>1</td>
+<td>1</td>
+</tr>
+
+<tr>
+<td>2</td>
+<td>1</td>
+</tr>
+
+<tr>
+<td>2</td>
+<td>2</td>
+</tr>
+</tbody>
+</table>
+<p>در مثال بالا، کاربر <code>alice@example.com</code> (شناسه کاربر <code>1</code>) فقط مجوز <code>movies:read</code> (شناسه مجوز <code>1</code>) را دارد، در حالی که <code>bob@example.com</code> (شناسه کاربر <code>2</code>) هر دو مجوز <code>movies:read</code> و <code>movies:write</code> را دارد.</p>
+
+<p>درست مانند رابطه یک به چند که قبلاً در کتاب بررسی کردیم، ممکن است بخواهید این رابطه را از هر دو طرف در مدل‌های پایگاه داده خود جستجو کنید. به عنوان مثال، در مدل‌های پایگاه داده خود ممکن است بخواهید متدهای زیر را ایجاد کنید:</p>
+
+<figure class="code plain">
+<pre>PermissionModel.GetAllForUser(user)       → Retrieve all permissions for a user
+UserModel.GetAllForPermission(permission) → Retrieve all users with a specific permission</pre>
+</figure>
+
+<h3 id="creating-the-sql-migrations">ایجاد SQL migrations</h3>
+
+<p>بیایید این را عملی کنیم و یک SQL migration ایجاد کنیم که جداول <code>permissions</code> و <code>users_permissions</code> جدیدی در پایگاه داده ما ایجاد می‌کند، بر اساس الگویی که در بالا توضیح دادیم.</p>
+
+<p>دستور زیر را اجرا کنید تا فایل‌های migration ایجاد شوند:</p>
+
+<figure class="code bash">
+<pre>$ migrate create -seq -ext .sql -dir ./migrations add_permissions
+<samp>/home/alex/Projects/greenlight/migrations/000006_add_permissions.up.sql
+/home/alex/Projects/greenlight/migrations/000006_add_permissions.down.sql</samp></pre>
+</figure>
+
+<p>سپس دستورات SQL زیر را به فایل migration &lsquo;up&rsquo; اضافه کنید:</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000006_add_permissions.up.sql</figcaption>
+<pre><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">permissions</span> <span class="p">(</span>
+    <span class="n">id</span> <span class="n">bigserial</span> <span class="k">PRIMARY</span> <span class="k">KEY</span><span class="p">,</span>
+    <span class="n">code</span> <span class="nb">text</span> <span class="k">NOT</span> <span class="k">NULL</span>
+<span class="p">)</span><span class="p">;</span>
+
+<span class="k">CREATE</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">users_permissions</span> <span class="p">(</span>
+    <span class="n">user_id</span> <span class="nb">bigint</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">REFERENCES</span> <span class="n">users</span> <span class="k">ON</span> <span class="k">DELETE</span> <span class="k">CASCADE</span><span class="p">,</span>
+    <span class="n">permission_id</span> <span class="nb">bigint</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">REFERENCES</span> <span class="n">permissions</span> <span class="k">ON</span> <span class="k">DELETE</span> <span class="k">CASCADE</span><span class="p">,</span>
+    <span class="k">PRIMARY</span> <span class="k">KEY</span> <span class="p">(</span><span class="n">user_id</span><span class="p">,</span> <span class="n">permission_id</span><span class="p">)</span>
+<span class="p">)</span><span class="p">;</span>
+
+<span class="c1">-- Add the two permissions to the table.
+</span><span class="c1"></span><span class="k">INSERT</span> <span class="k">INTO</span> <span class="n">permissions</span> <span class="p">(</span><span class="n">code</span><span class="p">)</span>
+<span class="k">VALUES</span> 
+    <span class="p">(</span><span class="s1">&#39;</span><span class="s1">movies:read</span><span class="s1">&#39;</span><span class="p">)</span><span class="p">,</span>
+    <span class="p">(</span><span class="s1">&#39;</span><span class="s1">movies:write</span><span class="s1">&#39;</span><span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+<p>چند نکته مهم در اینجا وجود دارد:</p>
+
+<ul>
+<li><p>خط <code>PRIMARY KEY (user_id, permission_id)</code> یک <em>کلید اصلی ترکیبی</em> روی جدول <code>users_permissions</code> ما تنظیم می‌کند، جایی که کلید اصلی از هر دو ستون <code>user_id</code> و <code>permission_id</code> تشکیل شده است. تنظیم این به عنوان کلید اصلی در اصل به این معنی است که ترکیب کاربر/مجوز می‌تواند فقط یک بار در جدول ظاهر شود و نمی‌تواند تکرار شود.</p></li>
+
+<li><p>هنگام ایجاد جدول <code>users_permissions</code> از نحو <code>REFERENCES users</code> استفاده می‌کنیم تا یک محدودیت foreign key در برابر کلید اصلی جدول <code>users</code> ایجاد کنیم، که تضمین می‌کند هر مقداری در ستون <code>user_id</code> دارای مدخل متناظری در جدول <code>users</code> ما باشد. و به همین ترتیب، از نحو <code>REFERENCES permissions</code> استفاده می‌کنیم تا مطمئن شویم که ستون <code>permission_id</code> دارای مدخل متناظری در جدول <code>permissions</code> باشد.</p></li>
+</ul>
+
+<p>بیایید دستورات <code>DROP TABLE</code> لازم را نیز به فایل migration &lsquo;down&rsquo; اضافه کنیم، به شکل زیر:</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000006_add_permissions.down.sql</figcaption>
+<pre><span class="k">DROP</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">users_permissions</span><span class="p">;</span>
+<span class="k">DROP</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">permissions</span><span class="p">;</span></pre>
+</figure>
+
+<p>حالا که این کار تمام شد، لطفاً migration را اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path ./migrations -database $GREENLIGHT_DB_DSN up
+<samp>6/u add_permissions (22.74009ms)</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="16.01-requiring-user-activation.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="16.03-setting-up-the-permissions-model.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "16.01-requiring-user-activation.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "16.03-setting-up-the-permissions-model.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

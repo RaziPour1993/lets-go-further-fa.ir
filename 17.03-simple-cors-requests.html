@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>درخواست‌های ساده CORS &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="17.00-cross-origin-requests.html">درخواست‌های cross-origin</a> &rsaquo; درخواست‌های ساده CORS</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="17.02-demonstrating-the-same-origin-policy.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="17.04-preflight-cors-requests.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۷.۳.</div>
+			<h2 id="simple-cors-requests">درخواست‌های ساده CORS</h2>
+
+<p>بیایید اکنون تغییراتی در API خود ایجاد کنیم تا <em>سیاست same-origin را تسهیل کنیم</em>، به طوری که JavaScript بتواند پاسخ‌های endpoint‌های API ما را بخواند.</p>
+
+<p>برای شروع، ساده‌ترین راه برای دستیابی به این هدف، تنظیم هدر زیر در تمام پاسخ‌های API ما است:</p>
+
+<figure class="code plain">
+<pre>Access-Control-Allow-Origin: *</pre>
+</figure>
+
+<p>هدر پاسخ <code>Access-Control-Allow-Origin</code> برای این استفاده می‌شود که به مرورگر نشان دهد اشتراک‌گذاری پاسخ با یک origin دیگر مشکلی ندارد. در این حالت، مقدار هدر کاراکتر wildcard <code>*</code> است، که به این معنی است که اشتراک‌گذاری پاسخ با <em>هر origin دیگری</em> مجاز است.</p>
+
+<p>بیایید یک تابع middleware کوچک <code>enableCORS()</code> در برنامه API خود ایجاد کنیم که این هدر را تنظیم می‌کند:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/middleware.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">enableCORS</span><span class="p">(</span><span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">w</span><span class="p">.</span><span class="nf">Header</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="s">&#34;Access-Control-Allow-Origin&#34;</span><span class="p">,</span> <span class="s">&#34;*&#34;</span><span class="p">)</span>
+
+        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>و سپس فایل <code>cmd/api/routes.go</code> خود را به‌روزرسانی کنید تا این middleware در تمام مسیرهای برنامه استفاده شود. به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:read&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">listMoviesHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:write&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:read&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPatch</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:write&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">updateMovieHandler</span><span class="p">)</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodDelete</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nf">requirePermission</span><span class="p">(</span><span class="s">&#34;movies:write&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">deleteMovieHandler</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/users&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">registerUserHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPut</span><span class="p">,</span> <span class="s">&#34;/v1/users/activated&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">activateUserHandler</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/tokens/authentication&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createAuthenticationTokenHandler</span><span class="p">)</span>
+
+    <span class="c1">// اضافه کردن middleware enableCORS().
+</span><span class="c1"></span>    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">enableCORS</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">rateLimit</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nf">authenticate</span><span class="p">(</span><span class="nx">router</span><span class="p">)</span><span class="p">)</span><span class="p">)</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>مهم است که اینجا اشاره کنیم که middleware <code>enableCORS()</code> عمداً در ابتدای زنجیره middleware قرار داده شده است.</p>
+
+<p>اگر آن را بعد از rate limiter خود قرار دهیم، به عنوان مثال، هر درخواست cross-origin که از حد نرخ فراتر رود <em>هدر <code>Access-Control-Allow-Origin</code> را نخواهد داشت</em>. این بدان معناست که توسط مرورگر وب مشتری به دلیل سیاست same-origin مسدود خواهند شد، به جای اینکه مشتری پاسخ <code>429 Too Many Requests</code> را مانند آنچه باید دریافت کند.</p>
+
+<p>خوب، بیایید آن را امتحان کنیم.</p>
+
+<p>برنامه API را مجدداً راه‌اندازی کنید و سپس دوباره <code>http://localhost:9000</code> را در مرورگر خود بازدید کنید. این بار درخواست cross-origin باید با موفقیت تکمیل شود و باید JSON از healthcheck handler ما را در صفحه وب مشاهده کنید. به این صورت:</p>
+
+<figure class="img">
+<img src="assets/img/17.03-01.png" alt="17.03-01.png" />
+</figure>
+
+<p>همچنین توصیه می‌کنم نگاهی سریع به هدرهای درخواست و پاسخ درخواست JavaScript <code>fetch()</code> بیندازید. باید ببینید که هدر <code>Access-Control-Allow-Origin: *</code> روی پاسخ تنظیم شده است، مشابه این:</p>
+
+<figure class="img">
+<img src="assets/img/17.03-02.png" alt="17.03-02.png" />
+</figure>
+
+<h3 id="restricting-origins">محدود کردن origin‌ها</h3>
+
+<p>استفاده از wildcard برای مجاز کردن درخواست‌های cross-origin، مانند آنچه در کد بالا انجام می‌دهیم، در شرایط خاصی می‌تواند مفید باشد (مانند زمانی که یک API کاملاً عمومی بدون بررسی‌های کنترل دسترسی دارید). اما اغلب اوقات احتمالاً می‌خواهید CORS را به مجموعه کوچکتری از <em>origin‌های مورد اعتماد</em> محدود کنید.</p>
+
+<p>برای انجام این کار، باید به‌صورت صریح origin‌های مورد اعتماد را در هدر <code>Access-Control-Allow-Origin</code> به جای استفاده از wildcard درج کنید. به عنوان مثال، اگر فقط می‌خواهید CORS را از origin <code>https://www.example.com</code> مجاز کنید، می‌توانید هدر زیر را در پاسخ‌های خود ارسال کنید:</p>
+
+<figure class="code plain">
+<pre>Access-Control-Allow-Origin: https://www.example.com</pre>
+</figure>
+
+<p>اگر فقط یک origin ثابت دارید که می‌خواهید درخواست‌ها از آن مجاز باشند، انجام این کار بسیار ساده است &mdash; کافی است middleware <code>enableCORS()</code> خود را به‌روزرسانی کنید تا مقدار origin لازم را به‌صورت hardcoded تنظیم کند.</p>
+
+<p>اما اگر نیاز به پشتیبانی از چندین origin مورد اعتماد دارید، یا می‌خواهید مقدار در زمان اجرا پیکربندی شود، اوضاع کمی پیچیده‌تر می‌شود.</p>
+
+<p>یکی از مشکلات این است که &mdash; در عمل &mdash; فقط می‌توانید <em>دقیقاً یک origin</em> را در هدر <code>Access-Control-Allow-Origin</code> مشخص کنید. نمی‌توانید لیستی از مقادیر origin متعدد، جدا شده با فاصله یا کاما مانند آنچه انتظار دارید، درج کنید.</p>
+
+<p>برای دور زدن این محدودیت، باید middleware <code>enableCORS()</code> خود را به‌روزرسانی کنید تا بررسی کند آیا مقدار هدر <code>Origin</code> با یکی از origin‌های مورد اعتماد شما مطابقت دارد یا خیر. اگر مطابقت داشت، می‌توانید آن مقدار را در هدر پاسخ <code>Access-Control-Allow-Origin</code> بازتاب دهید (یا <em>echо</em> کنید).</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> <a href="https://tools.ietf.org/html/rfc6454#section-7.1">مشخصات web origin</a> مقادیر <em>جدا شده با فاصله</em> متعدد را در هدر <code>Access-Control-Allow-Origin</code> مجاز می‌داند، اما متأسفانه هیچ مرورگر وبی این قابلیت را پشتیبانی نمی‌کند.
+</p></aside>
+
+<h3 id="supporting-multiple-dynamic-origins">پشتیبانی از origin‌های پویای متعدد</h3>
+
+<p>بیایید API خود را به‌روزرسانی کنیم تا درخواست‌های cross-origin به لیستی از origin‌های مورد اعتماد، قابل پیکربندی در زمان اجرا، محدود شوند.</p>
+
+<p>اولین کاری که انجام می‌دهیم اضافه کردن یک پرچم خط فرمان جدید <code>-cors-trusted-origins</code> به برنامه API خود است، که می‌توانیم از آن برای مشخص کردن لیست origin‌های مورد اعتماد در زمان اجرا استفاده کنیم. این را به گونه‌ای تنظیم می‌کنیم که origin‌ها باید با یک کاراکتر فاصله از هم جدا شوند &mdash; به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api -cors-trusted-origins="https://www.example.com https://staging.example.com"</pre>
+</figure>
+
+<p>برای پردازش این پرچم خط فرمان، می‌توانیم توابع <a href="https://golang.org/pkg/flag/#Func"><code>flags.Func()</code></a> و <a href="https://golang.org/pkg/strings/#Fields"><code>strings.Fields()</code></a> را ترکیب کنیم تا مقادیر origin را به یک slice از نوع <code>[]string</code> تقسیم کنیم که آماده استفاده باشد.</p>
+
+<p>اگر دنبال می‌کنید، فایل <code>cmd/api/main.go</code> خود را باز کنید و کد زیر را اضافه کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/main.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;context&#34;</span>
+    <span class="s">&#34;database/sql&#34;</span>
+    <span class="s">&#34;flag&#34;</span>
+    <span class="s">&#34;log/slog&#34;</span>
+    <span class="s">&#34;os&#34;</span>
+    <span class="s">&#34;strings&#34;</span> <span class="c1">// import جدید
+</span><span class="c1"></span>    <span class="s">&#34;sync&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+    <span class="s">&#34;greenlight.alexedwards.net/internal/mailer&#34;</span>
+
+    <span class="nx">_</span> <span class="s">&#34;github.com/lib/pq&#34;</span>
+<span class="p">)</span>
+
+<span class="kd">const</span> <span class="nx">version</span> <span class="p">=</span> <span class="s">&#34;1.0.0&#34;</span>
+
+<span class="kd">type</span> <span class="nx">config</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">port</span> <span class="kt">int</span>
+    <span class="nx">env</span>  <span class="kt">string</span>
+    <span class="nx">db</span>   <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">dsn</span>          <span class="kt">string</span>
+        <span class="nx">maxOpenConns</span> <span class="kt">int</span>
+        <span class="nx">maxIdleConns</span> <span class="kt">int</span>
+        <span class="nx">maxIdleTime</span>  <span class="nx">time</span><span class="p">.</span><span class="nx">Duration</span>
+    <span class="p">}</span>
+    <span class="nx">limiter</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">enabled</span> <span class="kt">bool</span>
+        <span class="nx">rps</span>     <span class="kt">float64</span>
+        <span class="nx">burst</span>   <span class="kt">int</span>
+    <span class="p">}</span>
+    <span class="nx">smtp</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">host</span>     <span class="kt">string</span>
+        <span class="nx">port</span>     <span class="kt">int</span>
+        <span class="nx">username</span> <span class="kt">string</span>
+        <span class="nx">password</span> <span class="kt">string</span>
+        <span class="nx">sender</span>   <span class="kt">string</span>
+    <span class="p">}</span>
+    <span class="c1">// اضافه کردن struct cors و فیلد trustedOrigins با نوع []string.
+</span><span class="c1"></span>    <span class="nx">cors</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">trustedOrigins</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">cfg</span> <span class="nx">config</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">port</span><span class="p">,</span> <span class="s">&#34;port&#34;</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="s">&#34;پورت سرور API&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">env</span><span class="p">,</span> <span class="s">&#34;env&#34;</span><span class="p">,</span> <span class="s">&#34;development&#34;</span><span class="p">,</span> <span class="s">&#34;محیط (development|staging|production)&#34;</span><span class="p">)</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">dsn</span><span class="p">,</span> <span class="s">&#34;db-dsn&#34;</span><span class="p">,</span> <span class="nx">os</span><span class="p">.</span><span class="nf">Getenv</span><span class="p">(</span><span class="s">&#34;GREENLIGHT_DB_DSN&#34;</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;DSN پستگرس&#34;</span><span class="p">)</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxOpenConns</span><span class="p">,</span> <span class="s">&#34;db-max-open-conns&#34;</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="s">&#34;حداکثر اتصالات باز پستگرس&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxIdleConns</span><span class="p">,</span> <span class="s">&#34;db-max-idle-conns&#34;</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="s">&#34;حداکثر اتصالات بیکار پستگرس&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">DurationVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">maxIdleTime</span><span class="p">,</span> <span class="s">&#34;db-max-idle-time&#34;</span><span class="p">,</span> <span class="mi">15</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Minute</span><span class="p">,</span> <span class="s">&#34;حداکثر زمان بیکاری اتصال پستگرس&#34;</span><span class="p">)</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">BoolVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">limiter</span><span class="p">.</span><span class="nx">enabled</span><span class="p">,</span> <span class="s">&#34;limiter-enabled&#34;</span><span class="p">,</span> <span class="kc">true</span><span class="p">,</span> <span class="s">&#34;فعال‌سازی rate limiter&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">Float64Var</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">limiter</span><span class="p">.</span><span class="nx">rps</span><span class="p">,</span> <span class="s">&#34;limiter-rps&#34;</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="s">&#34;حداکثر درخواست در ثانیه rate limiter&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">limiter</span><span class="p">.</span><span class="nx">burst</span><span class="p">,</span> <span class="s">&#34;limiter-burst&#34;</span><span class="p">,</span> <span class="mi">4</span><span class="p">,</span> <span class="s">&#34;حداکثر burst rate limiter&#34;</span><span class="p">)</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">smtp</span><span class="p">.</span><span class="nx">host</span><span class="p">,</span> <span class="s">&#34;smtp-host&#34;</span><span class="p">,</span> <span class="s">&#34;sandbox.smtp.mailtrap.io&#34;</span><span class="p">,</span> <span class="s">&#34;هاست SMTP&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">smtp</span><span class="p">.</span><span class="nx">port</span><span class="p">,</span> <span class="s">&#34;smtp-port&#34;</span><span class="p">,</span> <span class="mi">25</span><span class="p">,</span> <span class="s">&#34;پورت SMTP&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">smtp</span><span class="p">.</span><span class="nx">username</span><span class="p">,</span> <span class="s">&#34;smtp-username&#34;</span><span class="p">,</span> <span class="s">&#34;a7420fc0883489&#34;</span><span class="p">,</span> <span class="s">&#34;نام کاربری SMTP&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">smtp</span><span class="p">.</span><span class="nx">password</span><span class="p">,</span> <span class="s">&#34;smtp-password&#34;</span><span class="p">,</span> <span class="s">&#34;e75ffd0a3aa5ec&#34;</span><span class="p">,</span> <span class="s">&#34;رمز عبور SMTP&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">smtp</span><span class="p">.</span><span class="nx">sender</span><span class="p">,</span> <span class="s">&#34;smtp-sender&#34;</span><span class="p">,</span> <span class="s">&#34;Greenlight &lt;no-reply@greenlight.alexedwards.net&gt;&#34;</span><span class="p">,</span> <span class="s">&#34;فرستنده SMTP&#34;</span><span class="p">)</span>
+
+    <span class="c1">// استفاده از تابع flag.Func() برای پردازش پرچم خط فرمان -cors-trusted-origins.
+</span><span class="c1"></span>    <span class="c1">// در اینجا از تابع strings.Fields() استفاده می‌کنیم تا مقدار پرچم را بر اساس
+</span><span class="c1"></span>    <span class="c1">// کاراکترهای فاصله به یک slice تقسیم کنیم و آن را به struct پیکربندی اختصاص دهیم.
+</span><span class="c1"></span>    <span class="c1">// مهم این است که اگر پرچم -cors-trusted-origins وجود نداشته باشد، رشته خالی
+</span><span class="c1"></span>    <span class="c1">// داشته باشد، یا فقط شامل فاصله باشد، strings.Fields() یک slice خالی []string برمی‌گرداند.
+</span><span class="c1"></span>    <span class="nx">flag</span><span class="p">.</span><span class="nf">Func</span><span class="p">(</span><span class="s">&#34;cors-trusted-origins&#34;</span><span class="p">,</span> <span class="s">&#34;Origin‌های مورد اعتماد CORS (جدا شده با فاصله)&#34;</span><span class="p">,</span> <span class="kd">func</span><span class="p">(</span><span class="nx">val</span> <span class="kt">string</span><span class="p">)</span> <span class="kt">error</span> <span class="p">{</span>
+        <span class="nx">cfg</span><span class="p">.</span><span class="nx">cors</span><span class="p">.</span><span class="nx">trustedOrigins</span> <span class="p">=</span> <span class="nx">strings</span><span class="p">.</span><span class="nf">Fields</span><span class="p">(</span><span class="nx">val</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">nil</span>
+    <span class="p">}</span><span class="p">)</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">Parse</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="o">...</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر می‌خواهید درباره قابلیت <code>flag.Func()</code> و برخی از راه‌های استفاده از آن بیشتر بدانید، یک پست وبلاگی بسیار جامع‌تر درباره آن <a href="https://www.alexedwards.net/blog/custom-command-line-flags">اینجا</a> نوشته‌ام.
+</p></aside>
+
+<p>پس از اتمام کار، مرحله بعدی به‌روزرسانی middleware <code>enableCORS()</code> ما است. به‌طور خاص، می‌خواهیم middleware بررسی کند که آیا مقدار هدر <code>Origin</code> درخواست یک تطابق دقیق و حساس به بزرگی و کوچکی حروف با یکی از origin‌های مورد اعتماد ما دارد یا خیر. اگر تطابقی وجود داشت، باید هدر پاسخ <code>Access-Control-Allow-Origin</code> را تنظیم کنیم که مقدار هدر <code>Origin</code> درخواست را بازتاب (یا echو) می‌دهد.</p>
+
+<p>در غیر این صورت، باید اجازه دهیم درخواست به‌صورت عادی ادامه یابد <em>بدون</em> تنظیم هدر پاسخ <code>Access-Control-Allow-Origin</code>. به نوبه خود، این بدان معناست که هر پاسخ cross-origin توسط مرورگر وب مسدود خواهد شد، درست مانند ابتدا.</p>
+
+<p>یک عارضه جانبی این است که <em>پاسخ بسته به origin‌ای که درخواست از آن می‌آید متفاوت خواهد بود</em>. به‌طور خاص، مقدار هدر <code>Access-Control-Allow-Origin</code> ممکن است در پاسخ متفاوت باشد، یا حتی ممکن است اصلاً شامل نشده باشد.</p>
+
+<p>بنابراین به دلیل این موضوع باید مطمئن شویم که همیشه هدر پاسخ <code>Vary: Origin</code> را تنظیم کنیم تا به هر کشی اطلاع دهیم که پاسخ ممکن است متفاوت باشد. این واقعاً مهم است و می‌تواند علت باگ‌های ظریف <a href="https://textslashplain.com/2018/08/02/cors-and-vary/">مانند این</a> باشد اگر فراموش کنید این کار را انجام دهید. به عنوان یک قاعده کلی:</p>
+
+<p><em>اگر کد شما بر اساس محتوای یک هدر درخواست تصمیم می‌گیرد چه چیزی برگرداند، باید نام آن هدر را در هدر پاسخ <code>Vary</code> خود درج کنید &mdash; حتی اگر درخواست شامل آن هدر نبوده باشد.</em></p>
+
+<p>خوب، بیایید middleware <code>enableCORS()</code> خود را مطابق با منطق بالا به‌روزرسانی کنیم، به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/middleware.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">enableCORS</span><span class="p">(</span><span class="nx">next</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+        <span class="c1">// اضافه کردن هدر "Vary: Origin".
+</span><span class="c1"></span>        <span class="nx">w</span><span class="p">.</span><span class="nf">Header</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="s">&#34;Vary&#34;</span><span class="p">,</span> <span class="s">&#34;Origin&#34;</span><span class="p">)</span>
+
+        <span class="c1">// دریافت مقدار هدر Origin از درخواست.
+</span><span class="c1"></span>        <span class="nx">origin</span> <span class="o">:=</span> <span class="nx">r</span><span class="p">.</span><span class="nx">Header</span><span class="p">.</span><span class="nf">Get</span><span class="p">(</span><span class="s">&#34;Origin&#34;</span><span class="p">)</span>
+
+        <span class="c1">// فقط اگر هدر Origin در درخواست وجود داشت اجرا کنید.
+</span><span class="c1"></span>        <span class="k">if</span> <span class="nx">origin</span> <span class="o">!=</span> <span class="s">&#34;&#34;</span> <span class="p">{</span>
+            <span class="c1">// حلقه روی لیست origin‌های مورد اعتماد، بررسی کنید آیا origin درخواست
+</span><span class="c1"></span>            <span class="c1">// دقیقاً با یکی از آن‌ها مطابقت دارد یا خیر. اگر origin مورد اعتمادی وجود نداشته باشد،
+</span><span class="c1"></span>            <span class="c1">// حلقه تکرار نخواهد شد.
+</span><span class="c1"></span>            <span class="k">for</span> <span class="nx">i</span> <span class="o">:=</span> <span class="k">range</span> <span class="nx">app</span><span class="p">.</span><span class="nx">config</span><span class="p">.</span><span class="nx">cors</span><span class="p">.</span><span class="nx">trustedOrigins</span> <span class="p">{</span>
+                <span class="k">if</span> <span class="nx">origin</span> <span class="o">==</span> <span class="nx">app</span><span class="p">.</span><span class="nx">config</span><span class="p">.</span><span class="nx">cors</span><span class="p">.</span><span class="nx">trustedOrigins</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span> <span class="p">{</span>
+                    <span class="c1">// اگر تطابقی وجود داشت، هدر پاسخ "Access-Control-Allow-Origin"
+</span><span class="c1"></span>                    <span class="c1">// را با مقدار origin درخواست تنظیم کنید و از حلقه خارج شوید.
+</span><span class="c1"></span>                    <span class="nx">w</span><span class="p">.</span><span class="nf">Header</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="s">&#34;Access-Control-Allow-Origin&#34;</span><span class="p">,</span> <span class="nx">origin</span><span class="p">)</span>
+                    <span class="k">break</span>
+                <span class="p">}</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+
+        <span class="c1">// فراخوانی handler بعدی در زنجیره.
+</span><span class="c1"></span>        <span class="nx">next</span><span class="p">.</span><span class="nf">ServeHTTP</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>و با تکمیل این تغییرات، اکنون آماده هستیم که دوباره آن را امتحان کنیم.</p>
+
+<p>API خود را مجدداً راه‌اندازی کنید و <code>http://localhost:9000</code> و <code>http://localhost:9001</code> را به عنوان origin‌های مورد اعتماد وارد کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api -cors-trusted-origins="http://localhost:9000 http://localhost:9001"
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg="database connection pool established"
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg="starting server" addr=:4000 env=development</samp></pre>
+</figure>
+
+<p>و وقتی <a href="http://localhost:9000"><code>http://localhost:9000</code></a> را در مرورگر خود رفرش می‌کنید، باید ببینید که درخواست cross-origin همچنان با موفقیت کار می‌کند.</p>
+
+<figure class="img">
+<img src="assets/img/17.03-03.png" alt="17.03-03.png" />
+</figure>
+
+<p>در صورت تمایل، می‌توانید برنامه <code>cmd/examples/cors/simple</code> را با <code>:9001</code> به عنوان آدرس سرور اجرا کنید و باید ببینید که درخواست cross-origin از آنجا نیز کار می‌کند.</p>
+
+<p>در مقابل، برنامه <code>cmd/examples/cors/simple</code> را با آدرس <code>:9002</code> اجرا کنید.</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/examples/cors/simple --addr=":9002"
+<samp>2021/04/17 18:24:22 starting server on :9002</samp></pre>
+</figure>
+
+<p>این به صفحه وب یک origin از <code>http://localhost:9002</code> می‌دهد &mdash; که یکی از origin‌های مورد اعتماد ما نیست &mdash; بنابراین وقتی <a href="http://localhost:9002"><code>http://localhost:9002</code></a> را در مرورگر خود بازدید می‌کنید، باید ببینید که درخواست cross-origin مسدود شده است. به این صورت:</p>
+
+<figure class="img">
+<img src="assets/img/17.03-04.png" alt="17.03-04.png" />
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="partial-origin-matches">تطابق‌های نسبی origin</h4>
+
+<p>اگر تعداد زیادی origin مورد اعتماد دارید که می‌خواهید پشتیبانی کنید، ممکن است وسوسه شوید تطابق نسبی روی origin را بررسی کنید تا ببینید آیا با یک مقدار خاص 'شروع می‌شود' یا 'تمام می‌شود'، یا با یک عبارت بازاریط مطابقت دارد. اگر این کار را انجام می‌دهید، باید مراقب باشید از تطابق‌های ناخواسته جلوگیری کنید.</p>
+
+<p>به عنوان یک مثال ساده، اگر <code>http://example.com</code> و <code>http://www.example.com</code> origin‌های مورد اعتماد شما هستند، اولین فکر شما ممکن است بررسی این باشد که هدر <code>Origin</code> درخواست با <code>example.com</code> تمام می‌شود. این ایده بدی خواهد بود، زیرا یک مهاجم می‌تواند نام دامنه <code>attackerexample.com</code> را ثبت کند و هر درخواستی از آن origin از بررسی شما عبور می‌کند.</p>
+
+<p>این فقط یک مثال ساده است &mdash; و پست‌های وبلاگی زیر برخی از آسیب‌پذیری‌های دیگری را که می‌توانند هنگام استفاده از بررسی‌های تطابق نسبی یا عبارت بازاریط به وجود آیند، بحث می‌کنند:</p>
+
+<ul>
+<li><a href="https://medium.com/@ehayushpathak/security-risks-of-cors-e3f4a25c04d7">Security Risks of CORS</a></li>
+<li><a href="https://portswigger.net/research/exploiting-cors-misconfigurations-for-bitcoins-and-bounties">Exploiting CORS misconfigurations for Bitcoins and bounties</a></li>
+</ul>
+
+<p>به طور کلی، بهتر است هدر <code>Origin</code> درخواست را با یک لیست ایمنی صریح از origin‌های کامل مورد اعتماد بررسی کنید، مانند آنچه در این فصل انجام داده‌ایم.</p>
+
+<h4 id="the-null-origin">origin خالی</h4>
+
+<p>مهم است که هرگز مقدار <code>"null"</code> را به عنوان یک origin مورد اعتماد در لیست ایمنی خود درج نکنید. دلیل آن این است که هدر <code>Origin: null</code> در درخواست توسط یک مهاجم از طریق ارسال درخواست از یک <a href="https://stackoverflow.com/a/44765536">iframe sandbox شده</a> قابل جعل است.</p>
+
+<h4 id="authentication-and-cors">احراز هویت و CORS</h4>
+
+<p>اگر endpoint API شما به <em>اعتبارنامه‌ها</em> (کوکی‌ها یا احراز هویت اساسی HTTP) نیاز دارد، باید یک هدر <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Access-Control-Allow-Credentials"><code>Access-Control-Allow-Credentials: true</code></a> نیز در پاسخ‌های خود تنظیم کنید. اگر این هدر را تنظیم نکنید، مرورگر وب از خواندن پاسخ‌های cross-origin با اعتبارنامه‌ها توسط JavaScript جلوگیری می‌کند.</p>
+
+<p>مهم این است که هرگز نباید از هدر wildcard <code>Access-Control-Allow-Origin: *</code> همراه با <code>Access-Control-Allow-Credentials: true</code> استفاده کنید، زیرا این به هر وب‌سایتی اجازه می‌دهد درخواست cross-origin معتبر به API شما ارسال کند.</p>
+
+<p>همچنین، مهم است که اگر می‌خواهید اعتبارنامه‌ها با یک درخواست cross-origin ارسال شوند، باید این را به‌صورت صریح در JavaScript خود مشخص کنید. به عنوان مثال، با <code>fetch()</code> باید مقدار <code>credentials</code> درخواست را روی <code>'include'</code> تنظیم کنید. به این صورت:</p>
+
+<figure class="code js">
+<pre><span class="nx">fetch</span><span class="p">(</span><span class="s2">&#34;https://api.example.com&#34;</span><span class="p">,</span> <span class="p">{</span><span class="nx">credentials</span><span class="o">:</span> <span class="s1">&#39;include&#39;</span><span class="p">}</span><span class="p">)</span><span class="p">.</span><span class="nx">then</span><span class="p">(</span> <span class="p">...</span> <span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+<p>یا اگر از <a href="https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest"><code>XMLHTTPRequest</code></a> استفاده می‌کنید، باید ویژگی <a href="https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/withCredentials"><code>withCredentials</code></a> را روی <code>true</code> تنظیم کنید. به عنوان مثال:</p>
+
+<figure class="code js">
+<pre><span class="kd">var</span> <span class="nx">xhr</span> <span class="o">=</span> <span class="k">new</span> <span class="nx">XMLHttpRequest</span><span class="p">(</span><span class="p">)</span><span class="p">;</span>
+<span class="nx">xhr</span><span class="p">.</span><span class="nx">open</span><span class="p">(</span><span class="s1">&#39;GET&#39;</span><span class="p">,</span> <span class="s1">&#39;https://api.example.com&#39;</span><span class="p">)</span><span class="p">;</span>
+<span class="nx">xhr</span><span class="p">.</span><span class="nx">withCredentials</span> <span class="o">=</span> <span class="kc">true</span><span class="p">;</span>
+<span class="nx">xhr</span><span class="p">.</span><span class="nx">send</span><span class="p">(</span><span class="kc">null</span><span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="17.02-demonstrating-the-same-origin-policy.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="17.04-preflight-cors-requests.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "17.02-demonstrating-the-same-origin-policy.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "17.04-preflight-cors-requests.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
