@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>مدیریت متغیرهای محیطی &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="19.00-building-versioning-and-quality-control.html">ساخت، نسخه‌بندی و کنترل کیفیت</a> &rsaquo; مدیریت متغیرهای محیطی</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="19.01-creating-and-using-makefiles.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="19.03-quality-controlling-code.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۹.۲.</div>
+			<h2 id="managing-environment-variables">مدیریت متغیرهای محیطی</h2>
+
+<p>استفاده از دستور <code>make run/api</code> برای اجرای application API ما فرصتی را برای تنظیم flag‌های خط فرمان و حذف مقدار پیش‌فرض DSN دیتابیس از فایل <code>main.go</code> فراهم می‌کند. به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/main.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">cfg</span> <span class="nx">config</span>
+
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">IntVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">port</span><span class="p">,</span> <span class="s">&#34;port&#34;</span><span class="p">,</span> <span class="mi">4000</span><span class="p">,</span> <span class="s">&#34;API server port&#34;</span><span class="p">)</span>
+    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">env</span><span class="p">,</span> <span class="s">&#34;env&#34;</span><span class="p">,</span> <span class="s">&#34;development&#34;</span><span class="p">,</span> <span class="s">&#34;Environment (development|staging|production)&#34;</span><span class="p">)</span>
+
+    <span class="c1">// Use the empty string &#34;&#34; as the default value for the db-dsn command-line flag,
+</span><span class="c1"></span>    <span class="c1">// rather than os.Getenv(&#34;GREENLIGHT_DB_DSN&#34;) like we were previously.
+</span><span class="c1"></span>    <span class="nx">flag</span><span class="p">.</span><span class="nf">StringVar</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">cfg</span><span class="p">.</span><span class="nx">db</span><span class="p">.</span><span class="nx">dsn</span><span class="p">,</span> <span class="s">&#34;db-dsn&#34;</span><span class="p">,</span> <span class="s">&#34;&#34;</span><span class="p">,</span> <span class="s">&#34;PostgreSQL DSN&#34;</span><span class="p">)</span>
+
+    <span class="o">...</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>در عوض، می‌توانیم makefile خود را به‌روزرسانی کنیم تا مقدار DSN از متغیر محیطی <code>GREENLIGHT_DB_DSN</code> به‌عنوان بخشی از rule ارسال شود. اگر قصد دارید همراه با ما پیش بروید، لطفاً rule <code>run/api</code> را به شرح زیر به‌روزرسانی کنید:</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre>
+...
+
+<span class="c1">## run/api: run the cmd/api application</span>
+.PHONY: run/api
+run/api:
+	go run ./cmd/api -db-dsn<span class="o">=</span><span class="si">${</span><span class="nv">GREENLIGHT_DB_DSN</span><span class="si">}</span>
+
+...</pre>
+</figure>
+
+<p>این یک تغییر کوچک اما واقعاً خوب است، زیرا به این معنی است که <em> مقادیر پیکربندی پیش‌فرض application ما دیگر بسته به محیط اجرا تغییر نمی‌کنند</em>. مقادیر flag‌های خط فرمان که در زمان اجرا ارسال می‌شوند، <em>تنها</em> مکانیزم برای پیکربندی تنظیمات application ما هستند، و همچنان هیچ رازی در فایل‌های پروژه ما به‌صورت hardcoded وجود ندارد.</p>
+
+<p>در طول توسعه، اجرای application ما همچنان ساده و آسان است &mdash; تنها کاری که باید انجام دهیم تایپ <code>make run/api</code> است، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ make run/api 
+<samp>go run ./cmd/api -db-dsn=postgres://greenlight:pa55word@localhost/greenlight
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development</samp></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر از نمایش مقدار DSN (که شامل رمز عبور است) در صفحه نمایش خود هنگام تایپ <code>make run/api</code> احساس راحتی نمی‌کنید، به یاد داشته باشید که می‌توانید از کاراکتر <code>@</code> در makefile خود برای جلوگیری از نمایش آن دستور استفاده کنید.
+</p></aside>
+
+<h3 id="using-a-envrc-file">استفاده از فایل .envrc</h3>
+
+<p>اگر مایل باشید، می‌توانید متغیر محیطی <code>GREENLIGHT_DB_DSN</code> را از فایل‌های <code>$HOME/.profile</code> یا <code>$HOME/.bashrc</code> خود <em>حذف</em> کنید و آن را به‌جای آن در یک فایل <code>.envrc</code> در ریشه پروژه خود ذخیره کنید.</p>
+
+<p>اگر قصد دارید همراه با ما پیش بروید، یک فایل <code>.envrc</code> جدید به این صورت ایجاد کنید:</p>
+
+<figure class="code bash">
+<pre>$ touch .envrc</pre>
+</figure>
+
+<figure class="code plain">
+<figcaption>فایل: .envrc</figcaption>
+<pre>export GREENLIGHT_DB_DSN=postgres://greenlight:pa55word@localhost/greenlight</pre>
+</figure>
+
+<p>سپس می‌توانید از ابزاری مانند <a href="https://direnv.net/">direnv</a> برای بارگذاری خودکار متغیرها از فایل <code>.envrc</code> به shell فعلی خود استفاده کنید، یا به‌عنوان جایگزین، می‌توانید یک دستور <code>include</code> در بالای <code>Makefile</code> خود اضافه کنید تا آنها را بارگذاری کنید. به این صورت:</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre><span class="c1"># Include variables from the .envrc file</span>
+include .envrc
+
+<span class="c1">## help: print this help message</span>
+.PHONY: <span class="nb">help</span>
+help:
+	@echo <span class="s1">&#39;Usage:&#39;</span>
+	@sed -n <span class="s1">&#39;s/^##//p&#39;</span> <span class="si">${</span><span class="nv">MAKEFILE_LIST</span><span class="si">}</span> <span class="p">|</span> column -t -s <span class="s1">&#39;:&#39;</span> <span class="p">|</span>  sed -e <span class="s1">&#39;s/^/ /&#39;</span>
+
+...</pre>
+</figure>
+
+<p>این روش به‌ویژه در پروژه‌هایی که نیاز به تغییرات مکرر در متغیرهای محیطی خود دارید مناسب است، زیرا به این معنی است که می‌توانید فقط فایل <code>.envrc</code> را ویرایش کنید بدون اینکه نیاز به ری‌استارت کامپیوتر یا اجرای <code>source</code> پس از هر تغییر داشته باشید.</p>
+
+<p>یکی دیگر از مزایای خوب این روش این است که جدایی مناسبی بین متغیرها ایجاد می‌کند اگر روی پروژه‌های متعددی روی یک ماشین کار می‌کنید.</p>
+
+<aside class="important"><p>
+<strong>مهم:</strong> اگر از این روش استفاده می‌کنید و فایل <code>.envrc</code> شما شامل هیچ رازی است، باید مراقب باشید که فایل را وارد سیستم کنترل نسخه (مانند Git یا Mercurial) نکنید.
+</p></aside>
+
+<p>در چند فصل آینده ما شروع به کنترل نسخه کدپایس خود با Git می‌کنیم، بنابراین بیایید از قبل یک قانون ignore اضافه کنیم تا فایل <code>.envrc</code> هرگز commit نشود.</p>
+
+<figure class="code bash">
+<pre>$ echo &#39;.envrc&#39; &gt;&gt; .gitignore</pre>
+</figure>
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="19.01-creating-and-using-makefiles.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="19.03-quality-controlling-code.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "19.01-creating-and-using-makefiles.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "19.03-quality-controlling-code.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

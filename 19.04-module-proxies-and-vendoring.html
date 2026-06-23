@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>پروکسی‌های ماژول و vendoring &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="19.00-building-versioning-and-quality-control.html">ساخت، نسخه‌گذاری و کنترل کیفیت</a> &rsaquo; پروکسی‌های ماژول و vendoring</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="19.03-quality-controlling-code.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="19.05-building-binaries.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۹.۴.</div>
+			<h2 id="module-proxies-and-vendoring">پروکسی‌های ماژول و vendoring</h2>
+
+<p>یکی از خطرات استفاده از پکیج‌های شخص ثالث در کد Go شما این است که ممکن است مخزن پکیج دیگر در دسترس نباشد. به عنوان مثال، پکیج <code>httprouter</code> نقش مهمی در برنامه ما ایفا می‌کند و اگر نویسنده آن تصمیم بگیرد آن را از GitHub حذف کند، ما با دردسر بزرگی مواجه خواهیم شد تا آن را با یک جایگزین عوض کنیم.</p>
+
+<p>(من قصد ندارم بگویم این اتفاق به احتمال زیاد با <code>httprouter</code> رخ می‌دهد &mdash; فقط آن را به عنوان مثال استفاده می‌کنم!)</p>
+
+<p>خوشبختانه، Go دو راه برای کاهش این خطر ارائه می‌دهد: <em>پروکسی‌های ماژول</em> و <em>vendoring</em>.</p>
+
+<h3 id="module-proxies">پروکسی‌های ماژول</h3>
+
+<p>Go به طور پیش‌فرض از <em>پروکسی‌های ماژول</em> (همچنین به عنوان <em>آینه‌های ماژول</em> شناخته می‌شوند) پشتیبانی می‌کند. این‌ها سرویس‌هایی هستند که کد منبع را از مخازن اصلی و معتبر مانند GitHub، GitLab یا BitBucket کپی می‌کنند.</p>
+
+<p>دستور <code>go env</code> را روی ماشین خود اجرا کنید تا تنظیمات محیط عملیاتی Go خود را چاپ کند. خروجی شما باید شبیه به این باشد:</p>
+
+<figure class="code bash">
+<pre>$ go env
+<samp>AR=&#39;ar&#39;
+CC=&#39;gcc&#39;
+CGO_CFLAGS=&#39;-O2 -g&#39;
+CGO_CPPFLAGS=&#39;&#39;
+CGO_CXXFLAGS=&#39;-O2 -g&#39;
+CGO_ENABLED=&#39;1&#39;
+CGO_FFLAGS=&#39;-O2 -g&#39;
+CGO_LDFLAGS=&#39;-O2 -g&#39;
+CXX=&#39;g++&#39;
+GCCGO=&#39;gccgo&#39;
+GO111MODULE=&#39;&#39;
+GOAMD64=&#39;v1&#39;
+GOARCH=&#39;amd64&#39;
+GOAUTH=&#39;netrc&#39;
+GOBIN=&#39;&#39;
+GOCACHE=&#39;/home/alex/.cache/go-build&#39;
+GOCACHEPROG=&#39;&#39;
+GODEBUG=&#39;&#39;
+GOENV=&#39;/home/alex/.config/go/env&#39;
+GOEXE=&#39;&#39;
+GOEXPERIMENT=&#39;&#39;
+GOFIPS140=&#39;off&#39;
+GOFLAGS=&#39;&#39;
+GOGCCFLAGS=&#39;-fPIC -m64 -pthread -Wl,--no-gc-sections -fmessage-length=0 -ffile-prefix-map=/tmp/go-build1737714937=/tmp/go-build -gno-record-gcc-switches&#39;
+GOHOSTARCH=&#39;amd64&#39;
+GOHOSTOS=&#39;linux&#39;
+GOINSECURE=&#39;&#39;
+GOMOD=&#39;/home/alex/Projects/greenlight/go.mod&#39;
+GOMODCACHE=&#39;/home/alex/go/pkg/mod&#39;
+GONOPROXY=&#39;&#39;
+GONOSUMDB=&#39;&#39;
+GOOS=&#39;linux&#39;
+GOPATH=&#39;/home/alex/go&#39;
+GOPRIVATE=&#39;&#39;
+GOPROXY=&#39;https://proxy.golang.org,direct&#39;
+GOROOT=&#39;/usr/local/go&#39;
+GOSUMDB=&#39;sum.golang.org&#39;
+GOTELEMETRY=&#39;on&#39;
+GOTELEMETRYDIR=&#39;/home/alex/.config/go/telemetry&#39;
+GOTMPDIR=&#39;&#39;
+GOTOOLCHAIN=&#39;auto&#39;
+GOTOOLDIR=&#39;/usr/local/go/pkg/tool/linux_amd64&#39;
+GOVCS=&#39;&#39;
+GOVERSION=&#39;go1.25.0&#39;
+GOWORK=&#39;&#39;
+PKG_CONFIG=&#39;pkg-config&#39;</samp></pre>
+</figure>
+
+<p>نکته مهمی که باید به آن توجه کنید تنظیم <code>GOPROXY</code> است که شامل لیستی از آینه‌های ماژول جدا شده با کاما است. به طور پیش‌فرض مقدار زیر را دارد:</p>
+
+<figure class="code plain">
+<pre>GOPROXY=&#34;https://proxy.golang.org,direct&#34;</pre>
+</figure>
+
+<p>آدرس <code>https://proxy.golang.org</code> که در اینجا می‌بینیم به <em>آینه ماژولی</em> اشاره می‌کند که توسط تیم Go در Google نگهداری می‌شود و حاوی نسخه‌هایی از کد منبع هزاران پکیج open-source Go است.</p>
+
+<p>هر زمان که یک پکیج را با استفاده از دستور <code>go</code> &mdash; چه با <code>go get</code> و چه با یکی از دستورات <code>go mod *</code> &mdash; دریافت می‌کنید، ابتدا سعی می‌کند کد منبع را از این آینه بازیابی کند.</p>
+
+<p>اگر آینه قبلاً کپی ذخیره شده‌ای از کد منبع برای پکیج و شماره نسخه مورد نیاز داشته باشد، بلافاصله این کد را در یک فایل zip برمی‌گرداند. در غیر این صورت، اگر ذخیره نشده باشد، آینه سعی می‌کند کد را از مخزن اصلی دریافت کند، آن را به شما ارسال کند و برای استفاده آینده ذخیره کند.</p>
+
+<p>اگر آینه نتواند کد را دریافت کند، یک پاسخ خطا برمی‌گرداند و ابزار <code>go</code> به دریافت مستقیم کپی از مخزن اصلی بازمی‌گردد (به لطف دستور <code>direct</code> در تنظیم <code>GOPROXY</code>).</p>
+
+<p>استفاده از آینه ماژول به عنوان محل دریافت اولیه چندین مزیت دارد:</p>
+
+<ul>
+<li>آینه ماژول <code>https://proxy.golang.org</code> <em>معمولاً</em> پکیج‌ها را برای مدت طولانی ذخیره می‌کند و در نتیجه در صورت ناپدید شدن مخزن اصلی از اینترنت، درجه‌ای از محافظت را فراهم می‌کند.</li>
+<li>غیرممکن است که پس از ذخیره شدن در آینه ماژول <code>https://proxy.golang.org</code>، پکیجی را بازنویسی یا حذف کنید. این می‌تواند از ایجاد باگ‌ها یا مشکلاتی که ممکن است در صورت انتشار نسخه ویرایش شده پکیج <em>با شماره نسخه یکسان</em> توسط نویسنده پکیج (یا یک مهاجم) رخ دهد، جلوگیری کند.</li>
+<li>دریافت ماژول‌ها از آینه <code>https://proxy.golang.org</code> می‌تواند <a href="https://twitter.com/sajma/status/1155006281263923201?s=21">بسیار سریع‌تر</a> از دریافت آن‌ها از مخازن اصلی باشد.</li>
+</ul>
+
+<p>در بیشتر موارد، به طور کلی پیشنهاد می‌کنم تنظیم <code>GOPROXY</code> را با مقدار پیش‌فرض آن رها کنید.</p>
+
+<p>اما اگر نمی‌خواهید از آینه ماژول ارائه شده توسط Google استفاده کنید، یا پشت فایروالی هستید که آن را مسدود می‌کند، جایگزین‌های دیگری مانند <a href="https://goproxy.io"><code>https://goproxy.io</code></a> و <a href="https://athens.azurefd.net"><code>https://athens.azurefd.net</code></a> ارائه شده توسط Microsoft وجود دارد که می‌توانید به جای آن امتحان کنید. یا حتی می‌توانید با استفاده از پروژه‌های open-source <a href="https://github.com/gomods/athens">Athens</a> و <a href="https://github.com/goproxy/goproxy">goproxy</a> آینه ماژول خود را میزبانی کنید.</p>
+
+<p>به عنوان مثال، اگر می‌خواهید به استفاده از <code>https://goproxy.io</code> به عنوان آینه اصلی و <code>https://proxy.golang.org</code> به عنوان آینه ثانویه قبل از بازگشت به دریافت مستقیم تغییر دهید، می‌توانید تنظیم <code>GOPROXY</code> خود را به این صورت به‌روز کنید:</p>
+
+<figure class="code plain">
+<pre>$ export GOPROXY=https://goproxy.io,https://proxy.golang.org,direct</pre>
+</figure>
+
+<p>یا اگر می‌خواهید آینه‌های ماژول را به طور کلی غیرفعال کنید، می‌توانید مقدار آن را به سادگی روی <code>direct</code> تنظیم کنید:</p>
+
+<figure class="code plain">
+<pre>$ export GOPROXY=direct</pre>
+</figure>
+
+<h3 id="vendoring">Vendoring</h3>
+
+<p>قابلیت آینه ماژول Go عالی است و من استفاده از آن را توصیه می‌کنم. اما این یک راه حل جادویی برای همه توسعه‌دهندگان و همه پروژه‌ها نیست.</p>
+
+<p>به عنوان مثال، شاید نخواهید از آینه ماژول ارائه شده توسط Google یا یک شخص ثالث دیگر استفاده کنید، اما همچنین نمی‌خواهید هزینه میزبانی آینه خود را بپردازید. یا شاید نیاز دارید به طور منظم در محیطی بدون دسترسی به شبکه کار کنید. در این سناریوها احتمالاً همچنان می‌خواهید خطر یک وابستگی ناپدید شده را کاهش دهید، اما استفاده از آینه ماژول ممکن یا جذاب نیست.</p>
+
+<p>همچنین باید بدانید که آینه ماژول پیش‌فرض <code>proxy.golang.org</code> تضمین نمی‌کند که کپی ماژول را برای همیشه ذخیره کند. از <a href="https://proxy.golang.org/">سوالات متداول</a>:</p>
+
+<blockquote>
+<p>proxy.golang.org همه ماژول‌ها را برای همیشه ذخیره نمی‌کند. دلایل متعددی برای این امر وجود دارد، اما یکی از دلایل این است که اگر proxy.golang.org نتواند مجوز مناسبی را تشخیص دهد. در این صورت، فقط یک کپی کش شده موقت از ماژول در دسترس خواهد بود و ممکن است در صورت حذف از منبع اصلی و قدیمی شدن، غیرقابل دسترس شود.</p>
+</blockquote>
+
+<p>علاوه بر این، اگر نیاز دارید پس از ۵ یا ۱۰ سال به یک کد <em>سرد</em> بازگردید، آیا آینه ماژول <code>proxy.golang.org</code> همچنان در دسترس خواهد بود؟ امیدواریم که باشد &mdash; اما نمی‌توان با اطمینان گفت.</p>
+
+<p>بنابراین، به این دلایل، می‌تواند منطقی باشد که وابستگی‌های پروژه خود را با استفاده از دستور <code>go mod vendor</code> <em>وندور</em> کنید. وندور کردن وابستگی‌ها به این صورت در اساس کپی کاملی از کد منبع پکیج‌های شخص ثالث را در پوشه <code>vendor</code> پروژه شما ذخیره می‌کند.</p>
+
+<p>بیایید نحوه انجام این کار را نشان دهیم. با تطبیق قاعده <code>make tidy</code> خود برای فراخوانی دستورات <code>go mod verify</code> و <code>go mod vendor</code> شروع می‌کنیم، به این صورت:</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre>...
+
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># QUALITY CONTROL</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="c1">## tidy: tidy and vendor module dependencies, and format all .go files</span>
+.PHONY: tidy
+tidy:
+	@echo <span class="s1">&#39;Tidying module dependencies...&#39;</span>
+	go mod tidy
+	@echo <span class="s1">&#39;Verifying and vendoring module dependencies...&#39;</span>
+	go mod verify
+	go mod vendor
+	@echo <span class="s1">&#39;Formatting .go files...&#39;</span>
+	go fmt ./...
+
+...</pre>
+</figure>
+
+<p>برای روشن شدن آنچه در پشت صحنه اتفاق می‌افتد، بیایید به سرعت بررسی کنیم چه اتفاقی می‌افتد وقتی <code>make tidy</code> را اجرا می‌کنیم:</p>
+
+<ul>
+<li>دستور <code>go mod tidy</code> مطمئن می‌شود که فایل‌های <code>go.mod</code> و <code>go.sum</code> تمام وابستگی‌های ضروری پروژه ما را فهرست کنند (و هیچ وابستگی غیرضروری‌ای نداشته باشند).</li>
+<li>دستور <code>go mod verify</code> بررسی می‌کند که وابستگی‌های ذخیره شده در کش ماژول شما (واقع شده در ماشین شما در <code>$GOPATH/pkg/mod</code>) با checksum‌های موجود در فایل <code>go.sum</code> مطابقت داشته باشند.</li>
+<li>سپس دستور <code>go mod vendor</code> کد منبع ضروری را از کش ماژول شما به پوشه جدید <code>vendor</code> در ریشه پروژه شما کپی می‌کند.</li>
+</ul>
+
+<p>بیایید این را امتحان کنیم و قاعده جدید <code>tidy</code> را به این صورت اجرا کنیم:</p>
+
+<figure class="code bash">
+<pre>$ make tidy
+<samp>Tidying module dependencies...
+go mod tidy
+Verifying and vendoring module dependencies...
+go mod verify
+all modules verified
+go mod vendor
+Formatting .go files...
+go fmt ./...</samp></pre>
+</figure>
+
+<p>پس از تکمیل این کار، باید ببینید که یک پوشه جدید <code>vendor</code> ایجاد شده که حاوی کپی‌هایی از تمام کد منبع به همراه یک فایل <code>modules.txt</code> است. ساختار دایرکتوری در پوشه <code>vendor</code> شما باید شبیه به این باشد:</p>
+
+<figure class="code bash">
+<pre>$ tree -L 3 ./vendor/
+<samp>./vendor/
+├── github.com
+│   ├── BurntSushi
+│   │   └── toml
+│   ├── julienschmidt
+│   │   └── httprouter
+│   ├── lib
+│   │   └── pq
+│   ├── tomasen
+│   │   └── realip
+│   └── wneessen
+│       └── go-mail
+├── golang.org
+│   └── x
+│       ├── crypto
+│       ├── exp
+│       ├── mod
+│       ├── sync
+│       ├── text
+│       ├── time
+│       └── tools
+├── honnef.co
+│   └── go
+│       └── tools
+└── modules.txt</samp></pre>
+</figure>
+
+<p>اکنون، وقتی دستوری مانند <code>go run</code>، <code>go test</code> یا <code>go build</code> را اجرا می‌کنید، ابزار <code>go</code> وجود پوشه <code>vendor</code> را تشخیص می‌دهد و <em>کد وابستگی در پوشه vendor</em> استفاده خواهد شد &mdash; به جای کد در کش ماژول ماشین محلی شما.</p>
+
+<p>اگر مایلید، بیایید اجرای برنامه API را امتحان کنید. باید ببینید که همه چیز کامپایل می‌شود و دقیقاً مانند قبل کار می‌کند.</p>
+
+<figure class="code bash">
+<pre>$ make run/api 
+<samp>go run ./cmd/api -db-dsn=postgres://greenlight:pa55word@localhost/greenlight
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development</samp></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر می‌خواهید تأیید کنید که واقعاً وابستگی‌های vendored شده استفاده می‌شوند، می‌توانید <code>go clean -modcache</code> را اجرا کنید تا <em>همه چیز</em> از کش ماژول محلی شما حذف شود. وقتی دوباره API را اجرا می‌کنید، باید ببینید که همچنان <em>بدون</em> نیاز به بازیابی مجدد وابستگی‌ها از آینه ماژول Go به درستی شروع می‌شود.</p>
+</aside>
+
+<p>از آنجایی که تمام کد وابستگی اکنون در خود مخزن پروژه شما ذخیره شده است، می‌توانید آن را همراه با بقیه کد خود در Git (یا یک سیستم کنترل نسخه جایگزین) ثبت کنید. این موضوع آرامش‌بخش است زیرا به شما مالکیت تمام کدهای مورد استفاده برای ساخت و اجرای برنامه‌های خود را می‌دهد، تحت کنترل نسخه نگهداری می‌شود.</p>
+
+<p>عیب این کار، البته، این است که اندازه و حجم مخزن پروژه شما را افزایش می‌دهد. این نگرانی به ویژه در پروژه‌هایی که وابستگی‌های زیادی دارند و مخزن <em>بسیار</em> کلون خواهد شد، مانند پروژه‌هایی که سیستم CI/CD با هر commit جدید مخزن را کلون می‌کند، مطرح است.</p>
+
+<p>بیایید همچنین نگاهی سریع به فایل <code>vendor/modules.txt</code> ایجاد شده بیندازیم. اگر از مراحل پیروی کرده‌اید، باید شبیه به این باشد:</p>
+
+<figure class="code plain">
+<figcaption>فایل: vendor/modules.txt</figcaption>
+<pre># github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+## explicit; go 1.18
+github.com/BurntSushi/toml
+github.com/BurntSushi/toml/internal
+# github.com/julienschmidt/httprouter v1.3.0
+## explicit; go 1.7
+github.com/julienschmidt/httprouter
+# github.com/lib/pq v1.10.9
+## explicit; go 1.13
+github.com/lib/pq
+github.com/lib/pq/oid
+github.com/lib/pq/scram
+# github.com/tomasen/realip v0.0.0-20180522021738-f0c99a92ddce
+## explicit
+github.com/tomasen/realip
+# github.com/wneessen/go-mail v0.6.2
+## explicit; go 1.16
+github.com/wneessen/go-mail
+github.com/wneessen/go-mail/internal/pkcs7
+github.com/wneessen/go-mail/log
+... etc.</pre>
+</figure>
+
+<p>فایل <code>vendor/modules.txt</code> اساساً <em>فهرستی</em> از پکیج‌های vendored شده و شماره نسخه‌های آن‌هاست. وقتی vendoring استفاده می‌شود، ابزار <code>go</code> بررسی می‌کند که شماره نسخه‌های ماژول در <code>modules.txt</code> با شماره نسخه‌های موجود در فایل <code>go.mod</code> مطابقت داشته باشند. اگر عدم انطباقی وجود داشته باشد، ابزار <code>go</code> خطا گزارش می‌کند.</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> مهم است اشاره شود که هیچ راه آسانی برای تأیید اینکه <em>checksum‌های وابستگی‌های vendored شده</em> با checksum‌های موجود در فایل <code>go.sum</code> مطابقت دارند وجود ندارد. یا به عبارت دیگر، معادلی برای <code>go mod verify</code> وجود ندارد که <em>مستقیماً</em> روی محتوای پوشه <code>vendor</code> کار کند.</p>
+
+<p>برای کاهش این مشکل، ایده خوبی است که <code>go mod verify</code> و <code>go mod vendor</code> را به طور منظم اجرا کنید &mdash; که یکی از دلایل گنجاندن هر دو به عنوان بخشی از قاعده <code>make tidy</code> است. استفاده از <code>go mod verify</code> تأیید می‌کند که وابستگی‌های موجود در کش ماژول شما با فایل <code>go.sum</code> مطابقت دارند و <code>go mod vendor</code> همان وابستگی‌ها را از کش ماژول به پوشه <code>vendor</code> شما کپی می‌کند.</p>
+</aside>
+
+<p>در نهایت، باید از ایجاد هرگونه تغییر در کد موجود در دایرکتوری <code>vendor</code> خودداری کنید. انجام این کار می‌تواند بالقوه باعث سردرگمی شود (زیرا کد دیگر با نسخه اصلی کد منبع مطابقت نخواهد داشت) و &mdash; علاوه بر این &mdash; اجرای <code>go mod vendor</code> هر بار که آن را اجرا کنید، هر تغییری که ایجاد می‌کنید را بازنویسی می‌کند. اگر نیاز دارید کد یک وابستگی را تغییر دهید، بسیار بهتر است آن را fork کنید و نسخه fork شده را وارد کنید.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="inconsistent-vendoring-error">خطای vendoring ناسازگار</h4>
+
+<p>هر بار که یک وابستگی اضافه، حذف یا ارتقا می‌دهید، مطمئن شوید بلافاصله <code>go mod vendor</code> یا دستور <code>make tidy</code> را اجرا کنید تا محتوای پوشه <code>vendor</code> با فایل <code>go.mod</code> شما همگام شود. اگر این کار را نکنید، با خطای «vendoring ناسازگار» مشابه این مواجه خواهید شد:</p>
+
+<figure class="code bash">
+<pre>$ make run/api 
+<samp>go: inconsistent vendoring in /home/alex/Projects/greenlight:
+        github.com/foo/bar@v0.1.0: is explicitly 
+            required in go.mod, but not marked as explicit in vendor/modules.txt
+
+        To ignore the vendor directory, use -mod=readonly or -mod=mod.
+        To sync the vendor directory, run:
+                go mod vendor</samp></pre>
+</figure>
+
+<h4 id="the-pattern">الگوی ./&hellip;</h4>
+
+<p>بیشتر ابزارهای <code>go</code> از الگوی wildcard <code>./...</code> پشتیبانی می‌کنند، مانند <code>go fmt ./...</code>، <code>go vet ./...</code> و <code>go test ./...</code>. این الگو دایرکتوری فعلی و تمام زیردایرکتوری‌ها را شامل می‌شود، <em>به استثنای دایرکتوری <code>vendor</code></em>.</p>
+
+<p>به طور کلی، این مفید است زیرا به این معنی است که ما کد موجود در دایرکتوری <code>vendor</code> خود را به طور غیرضروری format، vet یا test نمی‌کنیم &mdash; و قاعده <code>make audit</code> ما به دلیل مشکلاتی که ممکن است <em>در</em> آن پکیج‌های vendored شده وجود داشته باشد، شکست نخواهد خورد.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="19.03-quality-controlling-code.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="19.05-building-binaries.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "19.03-quality-controlling-code.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "19.05-building-binaries.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

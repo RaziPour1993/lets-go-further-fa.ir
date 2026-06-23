@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>کنترل کیفیت کد &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="19.00-building-versioning-and-quality-control.html">ساخت، نسخه‌بندی و کنترل کیفیت</a> &rsaquo; کنترل کیفیت کد</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="19.02-managing-environment-variables.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="19.04-module-proxies-and-vendoring.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۹.۳.</div>
+			<h2 id="quality-controlling-code">کنترل کیفیت کد</h2>
+
+<p>در این فصل قصد داریم قوانین جدید <code>audit</code> و <code>tidy</code> را به <code>Makefile</code> خود اضافه کنیم تا به صورت خودکار کد پروژه را بررسی، تست و مرتب کنیم. داشتن قوانینی مانند اینها مفید است، زیرا می‌توانید قبل از commit تغییرات به سیستم کنترل نسخه یا ساختن هر binary، به طور منظم آنها را اجرا کنید.</p>
+
+<p>قانون <code>audit</code> <em>هیچ</em> تغییری در کد پروژه ایجاد نمی‌کند، بلکه صرفاً مشکلات را گزارش می‌دهد. به طور خاص این کارها را انجام می‌دهد:</p>
+
+<ul>
+<li><p>استفاده از دستور <code>go mod tidy -diff</code> برای بررسی اینکه آیا فایل‌های <code>go.mod</code> و <code>go.sum</code> قدیمی شده‌اند و نیاز به اصلاح دارند (که می‌توانید با اجرای <code>go mod tidy</code> آنها را تعمیر کنید).</p></li>
+
+<li><p>استفاده از دستور <code>go mod verify</code> برای بررسی اینکه dependencyهای موجود در کامپیوتر شما (واقع در module cache در مسیر <code>$GOPATH/pkg/mod</code>) از زمان دانلود تغییر نکرده‌اند و با hashهای رمزنگاری در فایل <code>go.sum</code> شما مطابقت دارند. اجرای این دستور کمک می‌کند تا مطمئن شوید dependencyهایی که استفاده می‌کنید دقیقاً همان‌هایی هستند که انتظار دارید.</p></li>
+
+<li><p>استفاده از دستور <code>go vet ./...</code> برای بررسی تمام فایل‌های <code>.go</code> در دایرکتوری پروژه. ابزار <a href="https://golang.org/cmd/vet/"><code>go vet</code></a> انواع مختلفی از <em>تحلیلگرها</em> را اجرا می‌کند که تحلیل ایستای کد شما را انجام می‌دهند و در مورد چیزهایی که ممکن است اشتباه باشند اما توسط کامپایلر تشخیص داده نمی‌شوند به شما هشدار می‌دهند &mdash; مانند کد غیرقابل دسترس، تخصیص‌های غیرضروری و build tagهای نادرست.</p></li>
+
+<li><p>استفاده از ابزار third-party <a href="https://staticcheck.io/"><code>staticcheck</code></a> برای انجام <a href="https://staticcheck.io/docs/checks">بررسی‌های تحلیل ایستای اضافی</a>.</p></li>
+
+<li><p>استفاده از دستور <code>go test -race -vet=off ./...</code> برای اجرای تمام تست‌ها در دایرکتوری پروژه. به طور پیش‌فرض، <code>go test</code> قبل از اجرای تست‌ها، مجموعه کوچکی از بررسی‌های <code>go vet</code> را به صورت خودکار اجرا می‌کند، بنابراین برای جلوگیری از تکرار، از پرچم <code>-vet=off</code> استفاده می‌کنیم تا این قابلیت را غیرفعال کنیم. پرچم <code>-race</code> <a href="https://golang.org/doc/articles/race_detector.html">race detector</a> زبان Go را فعال می‌کند که می‌تواند در حین اجرای تست‌ها برخی از انواع race conditionها را شناسایی کند.</p></li>
+</ul>
+
+<p>در مقابل، قانون <code>tidy</code> <em>واقعاً</em> تغییراتی در کد پروژه ایجاد می‌کند. این کارها را انجام می‌دهد:</p>
+
+<ul>
+<li><p>استفاده از دستور <code>go mod tidy</code> برای حذف dependencyهای استفاده‌نشده از فایل‌های <code>go.mod</code> و <code>go.sum</code> و اضافه کردن dependencyهای موجود.</p></li>
+
+<li><p>استفاده از دستور <code>go fmt ./...</code> برای فرمت‌بندی تمام فایل‌های <code>.go</code> در دایرکتوری پروژه، طبق استاندارد Go. این کار فایل‌ها را &lsquo;در جای خود&rsquo; بازنویسی می‌کند و نام فایل‌های تغییر یافته را نمایش می‌دهد.</p></li>
+</ul>
+
+<p>اگر می‌خواهید همراه ما پیش بروید، از دستور <code>go get -tool</code> برای اضافه کردن آخرین نسخه <code>staticcheck</code> به عنوان یک <em>tool dependency</em> در فایل <code>go.mod</code> خود استفاده کنید. به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ go get -tool honnef.co/go/tools/cmd/staticcheck@latest
+<samp>go: downloading honnef.co/go/tools v0.6.0
+go: downloading golang.org/x/tools v0.30.0
+go: downloading github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+go: downloading golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678
+go: downloading golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
+go: downloading golang.org/x/mod v0.23.0
+go: downloading golang.org/x/sync v0.11.0
+go: added github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+go: added golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678
+go: upgraded golang.org/x/mod v0.17.0 =&gt; v0.23.0
+go: upgraded golang.org/x/sync v0.10.0 =&gt; v0.11.0
+go: upgraded golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d =&gt; v0.30.0
+go: added honnef.co/go/tools v0.6.0</samp></pre>
+</figure>
+
+<p>پس از اتمام، اکنون باید بتوانید <code>staticcheck</code> را با استفاده از دستور <code>go tool</code> اجرا کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ go tool staticcheck --version
+<samp>staticcheck 2025.1 (0.6.0)</samp>
+
+$ go tool staticcheck ./...</pre>
+</figure>
+
+<aside class="note"><p>
+<strong>نکته:</strong> اگر با دستورهای <code>go get -tool</code> و <code>go tool</code> (که در Go 1.24 معرفی شدند تا مدیریت ابزارهای توسعه در پروژه‌های شما را آسان‌تر کنند) آشنا نیستید، لطفاً <a href="https://www.alexedwards.net/blog/how-to-manage-tool-dependencies-in-go-1-24-plus">این پست وبلاگ</a> را برای اطلاعات و مثال‌های بیشتر مشاهده کنید.
+</p></aside>
+
+<p>اکنون بیایید قوانین جدید <code>tidy</code> و <code>audit</code> را در makefile خود ایجاد کنیم. همچنین چند بلوک کامنت برای کمک به سازماندهی و روشن کردن هدف قوانین مختلف makefile اضافه می‌کنیم، به این صورت:</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre>include .envrc
+
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># HELPERS</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="c1">## help: print this help message</span>
+.PHONY: <span class="nb">help</span>
+help:
+	@echo <span class="s1">&#39;Usage:&#39;</span>
+	@sed -n <span class="s1">&#39;s/^##//p&#39;</span> <span class="si">${</span><span class="nv">MAKEFILE_LIST</span><span class="si">}</span> <span class="p">|</span> column -t -s <span class="s1">&#39;:&#39;</span> <span class="p">|</span>  sed -e <span class="s1">&#39;s/^/ /&#39;</span>
+
+.PHONY: confirm
+confirm:
+	@echo -n <span class="s1">&#39;Are you sure? [y/N] &#39;</span> <span class="o">&amp;&amp;</span> <span class="nb">read</span> ans <span class="o">&amp;&amp;</span> <span class="o">[</span> <span class="nv">$$</span><span class="o">{</span>ans:-N<span class="o">}</span> <span class="o">=</span> y <span class="o">]</span>
+
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># DEVELOPMENT</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="c1">## run/api: run the cmd/api application</span>
+.PHONY: run/api
+run/api:
+	go run ./cmd/api -db-dsn<span class="o">=</span><span class="si">${</span><span class="nv">GREENLIGHT_DB_DSN</span><span class="si">}</span>
+
+<span class="c1">## db/psql: connect to the database using psql</span>
+.PHONY: db/psql
+db/psql:
+	psql <span class="si">${</span><span class="nv">GREENLIGHT_DB_DSN</span><span class="si">}</span>
+
+<span class="c1">## db/migrations/new name=$1: create a new database migration</span>
+.PHONY: db/migrations/new
+db/migrations/new:
+	@echo <span class="s1">&#39;Creating migration files for ${name}...&#39;</span>
+	migrate create -seq -ext<span class="o">=</span>.sql -dir<span class="o">=</span>./migrations <span class="si">${</span><span class="nv">name</span><span class="si">}</span>
+
+<span class="c1">## db/migrations/up: apply all up database migrations</span>
+.PHONY: db/migrations/up
+db/migrations/up: confirm
+	@echo <span class="s1">&#39;Running up migrations...&#39;</span>
+	migrate -path ./migrations -database <span class="si">${</span><span class="nv">GREENLIGHT_DB_DSN</span><span class="si">}</span> up
+
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># QUALITY CONTROL</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="c1">## tidy: tidy module dependencies and format all .go files</span>
+.PHONY: tidy
+tidy:
+	@echo <span class="s1">&#39;Tidying module dependencies...&#39;</span>
+	go mod tidy
+	@echo <span class="s1">&#39;Formatting .go files...&#39;</span>
+	go fmt ./...
+
+<span class="c1">## audit: run quality control checks</span>
+.PHONY: audit
+audit:
+	@echo <span class="s1">&#39;Checking module dependencies...&#39;</span>
+	go mod tidy -diff
+	go mod verify
+	@echo <span class="s1">&#39;Vetting code...&#39;</span>
+	go vet ./...
+	go tool staticcheck ./...
+	@echo <span class="s1">&#39;Running tests...&#39;</span>
+	go <span class="nb">test</span> -race -vet<span class="o">=</span>off ./...</pre>
+</figure>
+
+<p>اکنون که این کار انجام شد، تنها کاری که باید انجام دهید تایپ <code>make tidy</code> و <code>make audit</code> برای اجرای این بررسی‌هاست. بیایید امتحان کنیم.</p>
+
+<p>اگر دقیقاً همراه ما پیش رفته باشید، خروجی باید بسیار شبیه به این باشد:</p>
+
+<figure class="code bash">
+<pre>$ make tidy
+<samp>Tidying module dependencies...
+go mod tidy
+go: downloading github.com/google/go-cmp v0.6.0
+Formatting .go files...
+go fmt ./...</samp>
+
+$ make audit
+<samp>Checking module dependencies...
+go mod tidy -diff
+go mod verify
+all modules verified
+Vetting code...
+go vet ./...
+go tool staticcheck ./...
+Running tests...
+go test -race -vet=off ./...
+?       greenlight.alexedwards.net/cmd/api      [no test files]
+?       greenlight.alexedwards.net/cmd/examples/cors/preflight  [no test files]
+?       greenlight.alexedwards.net/cmd/examples/cors/simple     [no test files]
+?       greenlight.alexedwards.net/internal/data        [no test files]
+?       greenlight.alexedwards.net/internal/jsonlog     [no test files]
+?       greenlight.alexedwards.net/internal/mailer      [no test files]
+?       greenlight.alexedwards.net/internal/validator   [no test files]</samp></pre>
+</figure>
+
+<p>این خیلی خوب است. دستور <code>make tidy</code> باعث شد چند پکیج اضافی دانلود شوند، اما به جز آن، تمام بررسی‌ها بدون هیچ مشکلی با موفقیت تکمیل شدند.</p>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات اضافی</h3>
+
+<h4 id="testing">تست‌نویسی</h4>
+
+<p>ما موضوع تست‌نویسی را در کتاب اول <em>Let's Go</em> به طور مفصل پوشش دادیم و همان اصول اینجا نیز صدق می‌کنند. در صورت تمایل، می‌توانید بخش تست‌نویسی کتاب <em>Let's Go</em> را مرور کنید و برخی از همان الگوها را در API خود پیاده‌سازی کنید. به عنوان مثال، ممکن است بخواهید این کارها را امتحان کنید:</p>
+
+<ul>
+<li><p>ایجاد یک تست end-to-end برای endpoint <code>GET /v1/healthcheck</code> برای تأیید اینکه هدرها و بدنه پاسخ مطابق انتظار شماست.</p></li>
+
+<li><p>ایجاد یک تست unit برای middleware <code>rateLimit()</code> برای تأیید اینکه پس از تعداد معینی درخواست، پاسخ <code>429 Too Many Requests</code> ارسال می‌کند.</p></li>
+
+<li><p>ایجاد یک تست یکپارچگی end-to-end، با استفاده از یک نمونه دیتابیس تست، که تأیید کند middlewareهای <code>authenticate()</code> و <code>requirePermission()</code> به درستی با هم کار می‌کنند تا دسترسی به endpointهای خاص را مجاز یا غیرمجاز کنند.</p></li>
+</ul>
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="19.02-managing-environment-variables.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="19.04-module-proxies-and-vendoring.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "19.02-managing-environment-variables.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "19.04-module-proxies-and-vendoring.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

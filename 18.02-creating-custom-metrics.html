@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ایجاد معیارهای سفارشی &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="18.00-metrics.html">معیارها</a> &rsaquo; ایجاد معیارهای سفارشی</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="18.01-exposing-metrics-with-expvar.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="18.03-request-level-metrics.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۸.۲.</div>
+			<h2 id="creating-custom-metrics">ایجاد معیارهای سفارشی</h2>
+
+<p>اطلاعات پیش‌فرضی که توسط handler <code>expvar</code> ارائه می‌شود، نقطه شروع خوبی است، اما می‌توانیم با نمایش برخی معیارهای سفارشی اضافی در پاسخ JSON، آن را مفیدتر کنیم.</p>
+
+<p>برای نشان دادن این موضوع، با یک مثال ساده شروع می‌کنیم و ابتدا نسخه برنامه خود را در JSON نمایش می‌دهیم. اگر به یاد ندارید، شماره نسخه در حال حاضر به عنوان یک ثابت رشته‌ای <code>&quot;1.0.0&quot;</code> در فایل <code>main.go</code> ما تعریف شده است.</p>
+
+<p>کد انجام این کار به دو مرحله اصلی تقسیم می‌شود: ابتدا باید یک متغیر سفارشی با پکیج <code>expvar</code> ثبت کنیم، و سپس باید مقدار خود متغیر را تنظیم کنیم. در یک خط، کد تقریباً به این صورت است:</p>
+
+<figure class="code go">
+<pre><span class="nx">expvar</span><span class="p">.</span><span class="nf">NewString</span><span class="p">(</span><span class="s">&#34;version&#34;</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="nx">version</span><span class="p">)</span></pre>
+</figure>
+
+<p>بخش اول این کد &mdash; <code>expvar.NewString(&quot;version&quot;)</code> &mdash; یک نوع <a href="https://golang.org/pkg/expvar/#String"><code>expvar.String</code></a> جدید ایجاد می‌کند، سپس آن را <em>منتشر می‌کند</em> تا در پاسخ JSON handler <code>expvar</code> با نام <code>&quot;version&quot;</code> ظاهر شود، و سپس یک اشاره‌گر به آن برمی‌گرداند. سپس از متد <code>Set()</code> روی آن استفاده می‌کنیم تا یک مقدار واقعی به اشاره‌گر اختصاص دهیم.</p>
+
+<p>دو نکته دیگر:</p>
+
+<ul>
+<li>نوع <code>expvar.String</code> برای استفاده همزمان ایمن است. بنابراین &mdash; اگر بخواهید &mdash; می‌توانید این مقدار را در زمان اجرا از handlerهای برنامه خود تغییر دهید.</li>
+<li>اگر سعی کنید دو متغیر <code>expvar</code> با همان نام ثبت کنید، هنگام ثبت متغیر تکراری، یک panic در زمان اجرا دریافت خواهید کرد.</li>
+</ul>
+
+<p>بیایید این کد را در تابع <code>main()</code> خود ادغام کنیم، به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/main.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;context&#34;</span>
+    <span class="s">&#34;database/sql&#34;</span>
+    <span class="s">&#34;expvar&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;flag&#34;</span>
+    <span class="s">&#34;log/slog&#34;</span>
+    <span class="s">&#34;os&#34;</span>
+    <span class="s">&#34;strings&#34;</span>
+    <span class="s">&#34;sync&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+    <span class="s">&#34;greenlight.alexedwards.net/internal/mailer&#34;</span>
+
+    <span class="nx">_</span> <span class="s">&#34;github.com/lib/pq&#34;</span>
+<span class="p">)</span>
+
+<span class="c1">// Remember, our version number is just a constant string (for now).
+</span><span class="c1"></span><span class="kd">const</span> <span class="nx">version</span> <span class="p">=</span> <span class="s">&#34;1.0.0&#34;</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="o">...</span>
+
+    <span class="c1">// Publish a new &#34;version&#34; variable in the expvar handler containing our application
+</span><span class="c1"></span>    <span class="c1">// version number (currently the constant &#34;1.0.0&#34;).
+</span><span class="c1"></span>    <span class="nx">expvar</span><span class="p">.</span><span class="nf">NewString</span><span class="p">(</span><span class="s">&#34;version&#34;</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="nx">version</span><span class="p">)</span>
+
+    <span class="nx">app</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="nx">application</span><span class="p">{</span>
+        <span class="nx">config</span><span class="p">:</span> <span class="nx">cfg</span><span class="p">,</span>
+        <span class="nx">logger</span><span class="p">:</span> <span class="nx">logger</span><span class="p">,</span>
+        <span class="nx">models</span><span class="p">:</span> <span class="nx">data</span><span class="p">.</span><span class="nf">NewModels</span><span class="p">(</span><span class="nx">db</span><span class="p">)</span><span class="p">,</span>
+        <span class="nx">mailer</span><span class="p">:</span> <span class="nx">mailer</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">serve</span><span class="p">(</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="nx">os</span><span class="p">.</span><span class="nf">Exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>اگر API را مجدداً راه‌اندازی کنید و <a href="http://localhost:4000/debug/vars"><code>http://localhost:4000/debug/vars</code></a> را در مرورگر خود باز کنید، اکنون باید یک آیتم <code>&quot;version&quot;: &quot;1.0.0&quot;</code> در JSON ببینید.</p>
+
+<p>مشابه این:</p>
+
+<figure class="img">
+<img src="assets/img/18.02-01.png" alt="18.02-01.png" />
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> در کد بالا از تابع <code>expvar.NewString()</code> برای ثبت و انتشار یک رشته در handler <code>expvar</code> استفاده کردیم. اما Go همچنین توابعی برای چند نوع داده رایج دیگر ارائه می‌دهد: <a href="https://golang.org/pkg/expvar/#NewFloat"><code>NewFloat()</code></a>، <a href="https://golang.org/pkg/expvar/#NewInt"><code>NewInt()</code></a> و <a href="https://golang.org/pkg/expvar/#NewMap"><code>NewMap()</code></a>. همه اینها به روش بسیار مشابهی کار می‌کنند و در فصل بعدی از آنها استفاده خواهیم کرد.
+</p></aside>
+
+<h3 id="dynamic-metrics">معیارهای پویا</h3>
+
+<p>گاهی اوقات ممکن است بخواهید معیارهایی را منتشر کنید که نیاز به فراخوانی کد دیگر &mdash; یا انجام نوعی پیش‌پردازش &mdash; برای تولید اطلاعات لازم دارند. برای کمک به این کار، تابع <a href="https://golang.org/pkg/expvar/#Publish"><code>expvar.Publish()</code></a> وجود دارد که به شما امکان می‌دهد <em>نتیجه یک تابع</em> را در خروجی JSON منتشر کنید.</p>
+
+<p>به عنوان مثال، اگر بخواهید تعداد goroutineهای فعال فعلی را از تابع <a href="https://golang.org/pkg/runtime/#NumGoroutine"><code>runtime.NumGoroutine()</code></a> Go منتشر کنید، می‌توانید کد زیر را بنویسید:</p>
+
+<figure class="code go">
+<pre><span class="nx">expvar</span><span class="p">.</span><span class="nf">Publish</span><span class="p">(</span><span class="s">&#34;goroutines&#34;</span><span class="p">,</span> <span class="nx">expvar</span><span class="p">.</span><span class="nf">Func</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="p">)</span> <span class="nx">any</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">runtime</span><span class="p">.</span><span class="nf">NumGoroutine</span><span class="p">(</span><span class="p">)</span>
+<span class="p">}</span><span class="p">)</span><span class="p">)</span></pre>
+</figure>
+
+<p>نکته مهمی که باید به آن اشاره کنیم این است که مقدار <code>any</code> که از این تابع برمی‌گردد <em>باید</em> بدون هیچ خطایی به JSON کدگذاری شود. اگر نتواند به JSON کدگذاری شود، از خروجی <code>expvar</code> حذف شده و پاسخ از endpoint <code>GET /debug/vars</code> ناقص خواهد بود. هر خطایی به صورت خاموش نادیده گرفته می‌شود.</p>
+
+<p>در مورد کد نمونه بالا، <code>runtime.NumGoroutine()</code> یک نوع <code>int</code> معمولی برمی‌گرداند &mdash; که به یک عدد JSON کدگذاری می‌شود. بنابراین مشکلی در اینجا وجود ندارد.</p>
+
+<p>خب، بیایید این کد را به تابع <code>main()</code> خود اضافه کنیم، همراه با دو تابع دیگر که:</p>
+
+<ul>
+<li>اطلاعاتی درباره وضعیت pool اتصال پایگاه داده ما (مانند تعداد اتصالات idle و در حال استفاده) از طریق متد <a href="https://golang.org/pkg/database/sql/#DB.Stats"><code>db.Stats()</code></a> منتشر می‌کنند.</li>
+<li>زمان Unix فعلی با دقت ثانیه را منتشر می‌کنند.</li>
+</ul>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/main.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;context&#34;</span>
+    <span class="s">&#34;database/sql&#34;</span>
+    <span class="s">&#34;expvar&#34;</span>
+    <span class="s">&#34;flag&#34;</span>
+    <span class="s">&#34;log/slog&#34;</span>
+    <span class="s">&#34;os&#34;</span>
+    <span class="s">&#34;runtime&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;strings&#34;</span>
+    <span class="s">&#34;sync&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+    <span class="s">&#34;greenlight.alexedwards.net/internal/mailer&#34;</span>
+
+    <span class="nx">_</span> <span class="s">&#34;github.com/lib/pq&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="o">...</span>
+
+    <span class="nx">expvar</span><span class="p">.</span><span class="nf">NewString</span><span class="p">(</span><span class="s">&#34;version&#34;</span><span class="p">)</span><span class="p">.</span><span class="nf">Set</span><span class="p">(</span><span class="nx">version</span><span class="p">)</span>
+
+    <span class="c1">// Publish the number of active goroutines.
+</span><span class="c1"></span>    <span class="nx">expvar</span><span class="p">.</span><span class="nf">Publish</span><span class="p">(</span><span class="s">&#34;goroutines&#34;</span><span class="p">,</span> <span class="nx">expvar</span><span class="p">.</span><span class="nf">Func</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="p">)</span> <span class="nx">any</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">runtime</span><span class="p">.</span><span class="nf">NumGoroutine</span><span class="p">(</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="c1">// Publish the database connection pool statistics.
+</span><span class="c1"></span>    <span class="nx">expvar</span><span class="p">.</span><span class="nf">Publish</span><span class="p">(</span><span class="s">&#34;database&#34;</span><span class="p">,</span> <span class="nx">expvar</span><span class="p">.</span><span class="nf">Func</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="p">)</span> <span class="nx">any</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">db</span><span class="p">.</span><span class="nf">Stats</span><span class="p">(</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="c1">// Publish the current Unix timestamp.
+</span><span class="c1"></span>    <span class="nx">expvar</span><span class="p">.</span><span class="nf">Publish</span><span class="p">(</span><span class="s">&#34;timestamp&#34;</span><span class="p">,</span> <span class="nx">expvar</span><span class="p">.</span><span class="nf">Func</span><span class="p">(</span><span class="kd">func</span><span class="p">(</span><span class="p">)</span> <span class="nx">any</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">(</span><span class="p">)</span><span class="p">.</span><span class="nf">Unix</span><span class="p">(</span><span class="p">)</span>
+    <span class="p">}</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="nx">app</span> <span class="o">:=</span> <span class="o">&amp;</span><span class="nx">application</span><span class="p">{</span>
+        <span class="nx">config</span><span class="p">:</span> <span class="nx">cfg</span><span class="p">,</span>
+        <span class="nx">logger</span><span class="p">:</span> <span class="nx">logger</span><span class="p">,</span>
+        <span class="nx">models</span><span class="p">:</span> <span class="nx">data</span><span class="p">.</span><span class="nf">NewModels</span><span class="p">(</span><span class="nx">db</span><span class="p">)</span><span class="p">,</span>
+        <span class="nx">mailer</span><span class="p">:</span> <span class="nx">mailer</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">serve</span><span class="p">(</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">logger</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="nx">err</span><span class="p">.</span><span class="nf">Error</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+        <span class="nx">os</span><span class="p">.</span><span class="nf">Exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>اگر API را مجدداً راه‌اندازی کنید و endpoint <code>GET /debug/vars</code> را دوباره در مرورگر خود باز کنید، اکنون باید آیتم‌های اضافی <code>&quot;database&quot;</code>، <code>&quot;goroutines&quot;</code> و <code>&quot;timestamp&quot;</code> را در JSON ببینید. به این صورت:</p>
+
+<figure class="img">
+<img src="assets/img/18.02-02.png" alt="18.02-02.png" />
+</figure>
+
+<p>در مورد من، می‌توانم ببینم که برنامه در حال حاضر 8 goroutine فعال دارد و pool اتصال پایگاه داده در وضعیت &lsquo;اولیه&rsquo; خود با فقط یک اتصال idle قرار دارد (که هنگام فراخوانی <code>db.PingContext()</code> توسط کد ما در هنگام راه‌اندازی ایجاد شده است).</p>
+
+<p>اگر مایل باشید، می‌توانید از ابزاری مانند <a href="https://github.com/rakyll/hey">hey</a> برای تولید تعدادی درخواست به برنامه خود استفاده کنید و ببینید این اعداد تحت بار چگونه تغییر می‌کنند. به عنوان مثال، می‌توانید یک دسته درخواست به endpoint <code>POST /v1/tokens/authentication</code> (که کند و پرهزینه است زیرا یک رمز عبور bcrypt-hashed را بررسی می‌کند) به این صورت ارسال کنید:</p>
+
+<figure class="code bash">
+<pre>$ BODY=&#39;{&#34;email&#34;: &#34;alice@example.com&#34;, &#34;password&#34;: &#34;pa55word&#34;}&#39;
+$ hey -d &#34;$BODY&#34; -m &#34;POST&#34; http://localhost:4000/v1/tokens/authentication
+<samp>
+Summary:
+  Total:        8.0979 secs
+  Slowest:      2.4612 secs
+  Fastest:      1.6169 secs
+  Average:      1.9936 secs
+  Requests/sec: 24.6977
+  
+  Total data:   24975 bytes
+  Size/request: 124 bytes
+
+Response time histogram:
+  1.617 [1]  |■
+  1.701 [6]  |■■■■■
+  1.786 [10] |■■■■■■■■■
+  1.870 [26] |■■■■■■■■■■■■■■■■■■■■■■■
+  1.955 [36] |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  2.039 [46] |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  2.123 [36] |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■
+  2.208 [21] |■■■■■■■■■■■■■■■■■■
+  2.292 [12] |■■■■■■■■■■
+  2.377 [4]  |■■■
+  2.461 [2]  |■■
+
+
+Latency distribution:
+  10% in 1.8143 secs
+  25% in 1.8871 secs
+  50% in 1.9867 secs
+  75% in 2.1000 secs
+  90% in 2.2017 secs
+  95% in 2.2642 secs
+  99% in 2.3799 secs
+
+Details (average, fastest, slowest):
+  DNS+dialup:	0.0009 secs, 1.6169 secs, 2.4612 secs
+  DNS-lookup:	0.0005 secs, 0.0000 secs, 0.0030 secs
+  req write:	0.0002 secs, 0.0000 secs, 0.0051 secs
+  resp wait:	1.9924 secs, 1.6168 secs, 2.4583 secs
+  resp read:	0.0000 secs, 0.0000 secs, 0.0001 secs
+
+Status code distribution:
+  [201]	200 responses</samp></pre>
+</figure>
+
+<aside class="important"><p>
+<strong>مهم:</strong> مطمئن شوید که rate limiter API شما با استفاده از پرچم خط فرمان <code>-limiter-enabled=false</code> غیرفعال است، در غیر این صورت ابزار <code>hey</code> تعداد زیادی پاسخ <code>429 Too Many Requests</code> دریافت خواهد کرد.
+</p></aside>
+
+<p>اگر در حین اجرای ابزار <code>hey</code> از endpoint <code>GET /debug/vars</code> بازدید کنید، باید ببینید که معیارهای برنامه شما اکنون بسیار متفاوت به نظر می‌رسند:</p>
+
+<figure class="img">
+<img src="assets/img/18.02-03.png" alt="18.02-03.png" />
+</figure>
+
+<p>در لحظه‌ای که این اسکرین‌شات را گرفتم، می‌توانیم ببینیم که برنامه API من 118 goroutine فعال، 11 اتصال پایگاه داده در حال استفاده و 14 اتصال idle داشته است.</p>
+
+<p>چند نکته جالب دیگر هم وجود دارد.</p>
+
+<p>عدد <code>WaitCount</code> پایگاه داده که 25 است، تعداد کل دفعاتی است که برنامه ما مجبور شده برای در دسترس قرار گرفتن یک اتصال پایگاه داده در pool <code>sql.DB</code> ما صبر کند (زیرا تمام اتصالات در حال استفاده بودند). به همین ترتیب، <code>WaitCountDuration</code> مقدار تجمعی زمان (بر حسب نانوثانیه) صرف شده برای انتظار برای یک اتصال است. از اینها، می‌توان محاسبه کرد که <em>هنگامی که برنامه ما مجبور به انتظار برای یک اتصال پایگاه داده شد، زمان انتظار متوسط تقریباً 98 میلی‌ثانیه بود</em>. در حالت ایده‌آل، در شرایط عادی بار در محیط production، باید صفر یا اعداد بسیار کمی برای این دو مورد ببینید.</p>
+
+<p>همچنین، عدد <code>MaxIdleTimeClosed</code> تعداد کل اتصالاتی است که به دلیل رسیدن به حد <code>ConnMaxIdleTime</code> خود (که در مورد ما به طور پیش‌فرض روی 15 دقیقه تنظیم شده است) بسته شده‌اند. اگر برنامه را در حال اجرا رها کنید اما از آن استفاده نکنید و پس از 15 دقیقه برگردید، باید ببینید که تعداد اتصالات باز به صفر کاهش یافته و شمارنده <code>MaxIdleTimeClosed</code> به همین ترتیب افزایش یافته است.</p>
+
+<p>شاید دوست داشته باشید با این موضوع بازی کنید و برخی از پارامترهای پیکربندی pool اتصال را تغییر دهید تا ببینید چگونه بر رفتار این اعداد تحت بار تأثیر می‌گذارد. به عنوان مثال:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api -limiter-enabled=false -db-max-open-conns=50 -db-max-idle-conns=50 -db-max-idle-time=20s -port=4000 </pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات اضافی</h3>
+
+<h4 id="protecting-the-metrics-endpoint">محافظت از endpoint معیارها</h4>
+
+<p>آگاه بودن از این موضوع مهم است که این معیارها اطلاعات بسیار مفیدی به هر کسی که می‌خواهد حمله denial-of-service علیه برنامه شما انجام دهد، ارائه می‌دهند، و مقادیر <code>&quot;cmdline&quot;</code> ممکن است اطلاعات حساس بالقوه (مانند DSN پایگاه داده) را نیز فاش کنند.</p>
+
+<p>بنابراین باید مطمئن شوید که دسترسی به endpoint <code>GET /debug/vars</code> را در محیط production محدود می‌کنید.</p>
+
+<p>رویکردهای مختلفی وجود دارد که می‌توانید برای انجام این کار استفاده کنید.</p>
+
+<p>یک گزینه این است که از فرآیند احراز هویت موجود خود استفاده کنیم و یک مجوز <code>metrics:view</code> ایجاد کنیم تا فقط کاربران مورد اعتماد خاصی بتوانند به endpoint دسترسی داشته باشند. گزینه دیگر استفاده از HTTP Basic Authentication برای محدود کردن دسترسی به endpoint است.</p>
+
+<p>در مورد ما، وقتی برنامه خود را در محیط production مستقر می‌کنیم، آن را به عنوان یک reverse proxy پشت <a href="https://caddyserver.com/">Caddy</a> اجرا خواهیم کرد. به عنوان بخشی از تنظیمات Caddy خود، دسترسی به endpoint <code>GET /debug/vars</code> را محدود خواهیم کرد تا فقط از طریق اتصالات از ماشین محلی قابل دسترسی باشد، به جای اینکه در اینترنت در معرض دید قرار گیرد.</p>
+
+<h4 id="removing-default-metrics">حذف معیارهای پیش‌فرض</h4>
+
+<p>در حال حاضر امکان حذف آیتم‌های پیش‌فرض <code>&quot;cmdline&quot;</code> و <code>&quot;memstats&quot;</code> از handler <code>expvar</code> وجود ندارد، حتی اگر بخواهید. یک <a href="https://github.com/golang/go/issues/29105">issue باز</a> در این مورد وجود دارد و امیدواریم در نسخه آینده Go امکان حذف این موارد فراهم شود.</p>
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="18.01-exposing-metrics-with-expvar.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="18.03-request-level-metrics.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "18.01-exposing-metrics-with-expvar.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "18.03-request-level-metrics.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

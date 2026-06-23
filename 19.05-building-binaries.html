@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ساخت باینری‌ها &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="19.00-building-versioning-and-quality-control.html">ساخت، versioning و کنترل کیفیت</a> &rsaquo; ساخت باینری‌ها</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="19.04-module-proxies-and-vendoring.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="19.06-managing-and-automating-version-numbers.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۹.۵.</div>
+			<h2 id="building-binaries">ساخت باینری‌ها</h2>
+
+<p>تا اینجا ما API خود را با استفاده از دستور <code>go run</code> (یا به‌تازگی <code>make run/api</code>) اجرا کرده‌ایم. اما در این فصل تمرکز ما روی توضیح نحوه <em>ساخت یک باینری قابل اجرا</em> است که بتوانید آن را توزیع کرده و روی ماشین‌های دیگر بدون نیاز به نصب Go toolchain اجرا کنید.</p>
+
+<p>برای ساخت یک باینری باید از دستور <code>go build</code> استفاده کنیم. به‌عنوان یک مثال ساده، استفاده به این صورت است:</p>
+
+<figure class="code bash">
+<pre>$ go build -o=./bin/api ./cmd/api</pre>
+</figure>
+
+<p>وقتی این دستور را اجرا می‌کنیم، <code>go build</code> پکیج <code>cmd/api</code> (و هر پکیج وابسته‌ای) را <em>کامپایل</em> کرده و فایل‌هایی حاوی machine code تولید می‌کند و سپس آن‌ها را <em>لینک</em> می‌کند تا یک باینری قابل اجرا تشکیل شود. در دستور بالا، باینری قابل اجرا در مسیر <code>./bin/api</code> خروجی داده خواهد شد.</p>
+
+<p>برای راحتی کار، بیایید یک قانون جدید <code>build/api</code> به makefile اضافه کنیم که این دستور را اجرا کند، به این صورت:</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre>
+...
+
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># BUILD</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="c1">## build/api: build the cmd/api application</span>
+.PHONY: build/api
+build/api:
+	@echo <span class="s1">&#39;Building cmd/api...&#39;</span>
+	go build -o<span class="o">=</span>./bin/api ./cmd/api</pre>
+</figure>
+
+<p>پس از اتمام کار، قانون <code>make build/api</code> را اجرا کنید. باید ببینید که یک فایل باینری قابل اجرا در مسیر <code>./bin/api</code> ایجاد شده است.</p>
+
+<figure class="code bash">
+<pre>$ make build/api 
+<samp>Building cmd/api...
+go build -o=./bin/api ./cmd/api</samp>
+$ ls -l ./bin/
+<samp>total 10228
+-rwxrwxr-x 1 alex alex 10470419 Apr 18 16:05 api</samp></pre>
+</figure>
+
+<p>و باید بتوانید این فایل اجرایی را برای راه‌اندازی برنامه API خود اجرا کرده و در صورت نیاز مقادیر command-line flag را وارد کنید. به‌عنوان مثال:</p>
+
+<figure class="code bash">
+<pre>$ ./bin/api -port=4040 -db-dsn=postgres://greenlight:pa55word@localhost/greenlight
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4040 env=development</samp></pre>
+</figure>
+
+<h3 id="reducing-binary-size">کاهش حجم باینری</h3>
+
+<p>اگر با دقت به باینری قابل اجرا نگاه کنید، می‌بینید که حجم آن ۱۰۴۷۰۴۱۹ بایت (حدود ۱۰.۵ مگابایت) است.</p>
+
+<figure class="code bash">
+<pre>$ ls -l ./bin/api 
+<samp>-rwxrwxr-x 1 alex alex 10470419 Apr 18 16:05 ./bin/api</samp></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر شما هم در حال دنبال کردن مراحل هستید، ممکن است حجم باینری شما کمی متفاوت باشد. این موضوع به سیستم‌عامل، نسخه دقیق Go و dependency‌های第三方 که استفاده می‌کنید بستگی دارد.
+</p></aside>
+
+<p>امکان کاهش حجم باینری حدود ۲۵٪ با دستور به Go linker برای حذف <a href="https://medium.com/a-journey-with-go/go-how-to-take-advantage-of-the-symbols-table-360dd52269e5">symbol table‌ها</a> و اطلاعات دیباگ <a href="https://golang.org/pkg/debug/dwarf/">DWARF</a> از باینری وجود دارد. می‌توانیم این کار را به‌عنوان بخشی از دستور <code>go build</code> با استفاده از <em>linker flag</em> <code>-ldflags=&quot;-s&quot;</code> به این صورت انجام دهیم:</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre>...
+
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># BUILD</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="c1">## build/api: build the cmd/api application</span>
+.PHONY: build/api
+build/api:
+	@echo <span class="s1">&#39;Building cmd/api...&#39;</span>
+	go build -ldflags<span class="o">=</span><span class="s1">&#39;-s&#39;</span> -o<span class="o">=</span>./bin/api ./cmd/api</pre>
+</figure>
+
+<p>اگر دوباره <code>make build/api</code> را اجرا کنید، باید ببینید که باینری به‌طور قابل‌توجهی کوچک‌تر شده است (در مورد من حدود ۷.۶ مگابایت).</p>
+
+<figure class="code bash">
+<pre>$ make build/api 
+<samp>Building cmd/api...
+go build -ldflags=&#39;-s&#39; -o=./bin/api ./cmd/api</samp>
+$ ls -l ./bin/api 
+<samp>-rwxrwxr-x 1 alex alex 7618560 Apr 18 16:08 ./bin/api</samp></pre>
+</figure>
+
+<p>مهم است بدانید که حذف این اطلاعات، دیباگ کردن اجرا با ابزارهایی مانند <a href="https://github.com/go-delve/delve">Delve</a> یا <a href="https://www.gnu.org/software/gdb/">gdb</a> را سخت‌تر می‌کند. اما به‌طور کلی، نیازی به انجام این کار نیست &mdash; و حتی یک <a href="https://github.com/golang/go/issues/26074">پیشنهاد باز</a> از طرف Rob Pike وجود دارد که حذف اطلاعات DWARF را به‌صورت پیش‌فرض رفتار linker در آینده قرار دهد.</p>
+
+<aside class="note"><p>
+<strong>نکته:</strong> Linker flag <code>-ldflags='-s'</code> هم symbol table‌ها و هم اطلاعات دیباگ DWARF را حذف می‌کند. اگر فقط می‌خواهید اطلاعات دیباگ DWARF را حذف کنید، می‌توانید به‌جای آن از linker flag <code>-ldflags='-w'</code> استفاده کنید. اگر فقط می‌خواهید symbol table را حذف کنید، می‌توانید از flag‌های <code>-ldflags='-s -w=0'</code> استفاده کنید.
+</p></aside>
+
+<h3 id="cross-compilation">کامپایل متقاطع</h3>
+
+<p>به‌صورت پیش‌فرض، دستور <code>go build</code> یک باینری مناسب برای استفاده روی <em>سیستم‌عامل و معماری ماشین محلی شما</em> تولید می‌کند. اما همچنین از کامپایل متقاطع (cross-compilation) پشتیبانی می‌کند، بنابراین می‌توانید یک باینری مناسب برای استفاده روی ماشین دیگری تولید کنید. این ویژگی به‌ویژه زمانی مفید است که روی یک سیستم‌عامل توسعه می‌دهید و روی سیستم‌عامل دیگری مستقر می‌کنید.</p>
+
+<p>برای مشاهده لیست تمام ترکیبات سیستم‌عامل/معماری که Go پشتیبانی می‌کند، می‌توانید دستور <code>go tool dist list</code> را به این صورت اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ go tool dist list
+<samp>aix/ppc64
+android/386
+android/amd64
+android/arm
+android/arm64
+darwin/amd64
+...</samp></pre>
+</figure>
+
+<p>و می‌توانید سیستم‌عامل و معماری مورد نظر خود برای ساخت باینری را با تنظیم متغیرهای محیطی <code>GOOS</code> و <code>GOARCH</code> هنگام اجرای <code>go build</code> مشخص کنید. به‌عنوان مثال:</p>
+
+<figure class="code bash">
+<pre>$ GOOS=linux GOARCH=amd64 go build {args}</pre>
+</figure>
+
+<p>در بخش بعدی کتاب، نحوه استقرار یک باینری قابل اجرا روی یک سرور Ubuntu Linux میزبانی‌شده توسط DigitalOcean را بررسی خواهیم کرد. برای این کار، به باینری نیاز داریم که برای اجرا روی ماشینی با ترکیب سیستم‌عامل و معماری <code>linux/amd64</code> طراحی شده باشد.</p>
+
+<p>پس بیایید قانون <code>make build/api</code> خود را به‌روز کنیم تا دو باینری تولید کند &mdash; یکی برای استفاده روی ماشین محلی و دیگری برای استقرار روی سرور Ubuntu Linux.</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre>...
+
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># BUILD</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="c1">## build/api: build the cmd/api application</span>
+.PHONY: build/api
+build/api:
+	@echo <span class="s1">&#39;Building cmd/api...&#39;</span>
+	go build -ldflags<span class="o">=</span><span class="s1">&#39;-s&#39;</span> -o<span class="o">=</span>./bin/api ./cmd/api
+	<span class="nv">GOOS</span><span class="o">=</span>linux <span class="nv">GOARCH</span><span class="o">=</span>amd64 go build -ldflags<span class="o">=</span><span class="s1">&#39;-s&#39;</span> -o<span class="o">=</span>./bin/linux_amd64/api ./cmd/api</pre>
+</figure>
+
+<p>اگر در حال دنبال کردن مراحل هستید، دوباره <code>make build/api</code> را اجرا کنید.</p>
+
+<p>باید ببینید که اکنون دو باینری تولید شده‌اند &mdash; باینری cross-compiled در دایرکتوری <code>./bin/linux_amd64</code> قرار دارد، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ make build/api 
+<samp>Building cmd/api...
+go build -ldflags=&#39;-s&#39; -o=./bin/api ./cmd/api
+GOOS=linux GOARCH=amd64 go build -ldflags=&#39;-s&#39; -o=./bin/linux_amd64/api ./cmd/api</samp>
+$ tree ./bin
+<samp>./bin
+├── api
+└── linux_amd64
+    └── api</samp></pre>
+</figure>
+
+<p>به‌عنوان یک قانون کلی، احتمالاً نمی‌خواهید باینری‌های Go خود را در کنار کد منبع در version control ثبت کنید، زیرا حجم مخزن شما را به‌طور قابل‌توجهی افزایش می‌دهند.</p>
+
+<p>پس، اگر در حال دنبال کردن مراحل هستید، بیایید یک قانون اضافی به فایل <code>.gitignore</code> اضافه کنیم که به Git دستور دهد محتوای دایرکتوری <code>bin</code> را نادیده بگیرد.</p>
+
+<figure class="code bash">
+<pre>$ echo &#39;bin/&#39; &gt;&gt; .gitignore
+$ cat .gitignore
+<samp>.envrc
+bin/</samp></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="build-caching">کش کردن build</h4>
+
+<p>مهم است بدانید که دستور <code>go build</code> خروجی build را در <em>build cache</em> Go ذخیره می‌کند. این خروجی کش‌شده در ساخت‌های آینده در صورت مناسب بودن دوباره استفاده خواهد شد، که می‌تواند زمان کلی build برنامه شما را به‌طور قابل‌توجهی افزایش دهد.</p>
+
+<p>اگر مطمئن نیستید build cache شما کجا قرار دارد، می‌توانید با اجرای دستور <code>go env GOCACHE</code> بررسی کنید:</p>
+
+<figure class="code bash">
+<pre>$ go env GOCACHE
+<samp>/home/alex/.cache/go-build</samp></pre>
+</figure>
+
+<p>همچنین باید بدانید که build cache به‌صورت خودکار تغییرات کتابخانه‌های C را که کد شما با <a href="https://golang.org/cmd/cgo/"><code>cgo</code></a> وارد می‌کند تشخیص نمی‌دهد. بنابراین، اگر از آخرین build یک کتابخانه C را تغییر داده‌اید، باید از flag <code>-a</code> استفاده کنید تا تمام پکیج‌ها هنگام اجرای <code>go build</code> بازسازی شوند. به‌طور جایگزین، می‌توانید از <code>go clean</code> برای پاک کردن cache استفاده کنید:</p>
+
+<figure class="code bash">
+<pre>$ go build -a -o=/bin/foo ./cmd/foo        <samp># Force all packages to be rebuilt</samp>
+$ go clean -cache                          <samp># Remove everything from the build cache</samp></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر هرگز <code>go build</code> را روی یک پکیج غیر از <code>main</code> اجرا کنید، خروجی build در build cache ذخیره می‌شود تا بتوان دوباره از آن استفاده کرد، اما هیچ فایل اجرایی تولید نخواهد شد.
+</p></aside>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="19.04-module-proxies-and-vendoring.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="19.06-managing-and-automating-version-numbers.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "19.04-module-proxies-and-vendoring.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "19.06-managing-and-automating-version-numbers.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

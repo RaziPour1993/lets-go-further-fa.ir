@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>معیارها &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; معیارها</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="17.04-preflight-cors-requests.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="18.01-exposing-metrics-with-expvar.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۸.</div>
+			<h1 id="metrics">معیارها</h1>
+
+<p>وقتی برنامه شما در محیط production با ترافیک واقعی در حال اجراست &mdash; یا اگر در حال انجام آزمون بار هدفمند هستید &mdash; ممکن است بخواهید بینش دقیقی درباره نحوه عملکرد و منابع مورد استفاده برنامه داشته باشید.</p>
+
+<p>به عنوان مثال، ممکن است بخواهید به سوالاتی مانند موارد زیر پاسخ دهید:</p>
+
+<ul>
+<li>برنامه من چه مقدار حافظه مصرف می‌کند؟ این مقدار در طول زمان چگونه تغییر می‌کند؟</li>
+<li>چند goroutine در حال حاضر در حال استفاده است؟ این تعداد در طول زمان چگونه تغییر می‌کند؟</li>
+<li>چند اتصال پایگاه داده در حال استفاده و چند اتصال بیکار است؟ آیا نیاز به تغییر تنظیمات pool اتصالات دارم؟</li>
+<li>نسبت پاسخ‌های موفق HTTP به خطاهای سمت کلاینت و سرور چقدر است؟ آیا نرخ خطاها بالاتر از حالت عادی است؟</li>
+</ul>
+
+<p>داشتن بینش درباره این موضوعات می‌تواند به شما در تصمیم‌گیری درباره سخت‌افزار و پیکربندی کمک کند و به عنوان یک هشدار اولیه از مشکلات احتمالی (مانند نشت حافظه) عمل کند.</p>
+
+<p>برای کمک به این منظور، کتابخانه استاندارد Go پکیج <a href="https://golang.org/pkg/expvar/"><code>expvar</code></a> را شامل می‌شود که جمع‌آوری و مشاهده معیارهای مختلف برنامه در زمان اجرا را آسان می‌کند.</p>
+
+<p>در این بخش یاد خواهید گرفت:</p>
+
+<ul>
+<li><p>چگونه از پکیج <code>expvar</code> برای مشاهده معیارهای برنامه در قالب JSON از طریق یک HTTP handler استفاده کنید.</p></li>
+
+<li><p>چه معیارهای پیش‌فرض برنامه‌ای موجود هستند و چگونه معیارهای سفارشی برنامه خود را برای نظارت بر تعداد goroutine‌های فعال و pool اتصالات پایگاه داده ایجاد کنید.</p></li>
+
+<li><p>چگونه از middleware برای نظارت بر معیارهای سطح درخواست برنامه، از جمله تعداد کدهای وضعیت پاسخ HTTP مختلف استفاده کنید.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="17.04-preflight-cors-requests.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="18.01-exposing-metrics-with-expvar.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "17.04-preflight-cors-requests.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "18.01-exposing-metrics-with-expvar.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
