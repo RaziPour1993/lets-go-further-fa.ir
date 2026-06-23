@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>استقرار و میزبانی &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; استقرار و میزبانی</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="19.06-managing-and-automating-version-numbers.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="20.01-creating-a-digital-ocean-droplet.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۲۰.</div>
+			<h1 id="deployment-and-hosting">استقرار و میزبانی</h1>
+
+<p>در این بخش پایانی کتاب، بررسی خواهیم کرد که چگونه برنامه API خود را روی یک سرور production مستقر کرده و آن را در اینترنت در دسترس قرار دهیم.</p>
+
+<p>هر پروژه و تیم پروژه نیازهای فنی و تجاری متفاوتی در زمینه hosting و deployment خواهد داشت، بنابراین ارائه یک رویکرد واحد برای همه در اینجا غیرممکن است.</p>
+
+<p>برای اینکه محتوای این بخش تا حد امکان کاربردی و قابل انتقال باشد، روی میزبانی برنامه روی یک سرور Linux خودمدیریت‌شده (چیزی که توسط شرکت‌های hosting متعددی در سراسر جهان ارائه می‌شود) و استفاده از ابزارهای استاندارد Linux برای مدیریت پیکربندی سرور و deployment تمرکز خواهیم کرد.</p>
+
+<p>همچنین فرآیند پیکربندی و deployment سرور را تا حد امکان خودکار خواهیم کرد، تا انجام <em>continuous deployments</em> آسان باشد و در آینده در صورت نیاز امکان <em>replicate کردن سرور</em> وجود داشته باشد.</p>
+
+<p>اگر قصد دارید همراه با ما پیش بروید، در این کتاب از <a href="https://www.digitalocean.com/">DigitalOcean</a> به عنوان ارائه‌دهنده hosting استفاده خواهیم کرد. DigitalOcean رایگان نیست، اما ارزش خوبی دارد و هزینه راه‌اندازی یک سرور از ۴ دلار آمریکا در ماه شروع می‌شود. اگر نمی‌خواهید از DigitalOcean استفاده کنید، باید بتوانید تقریباً همین رویکردی که در اینجا توضیح می‌دهیم را با هر ارائه‌دهنده hosting دیگر Linux دنبال کنید.</p>
+
+<p>از نظر infrastructure و architecture، همه چیز را روی یک سرور Ubuntu Linux واحد اجرا خواهیم کرد. stack ما شامل یک دیتابیس PostgreSQL و فایل binary قابل اجرای Greenlight API خواهد بود، که تقریباً به همان شکلی که تا اینجا در این کتاب دیده‌ایم عمل می‌کند. اما علاوه بر این، <a href="https://caddyserver.com/">Caddy</a> را به عنوان یک <em>reverse proxy</em> در مقابل Greenlight API نیز اجرا خواهیم کرد.</p>
+
+<p>استفاده از Caddy چندین مزیت دارد. این ابزار به طور خودکار اتصالات HTTPS را برای ما مدیریت و خاتمه می‌دهد &mdash; از جمله تولید و مدیریت خودکار گواهی‌های TLS از طریق <a href="https://letsencrypt.org/">Let's Encrypt</a> و <a href="https://zerossl.com/">ZeroSSL</a> &mdash; و همچنین می‌توانیم از Caddy برای محدود کردن آسان دسترسی اینترنت به metrics endpoint خود استفاده کنیم.</p>
+
+<p>در این بخش یاد خواهید گرفت که چگونه:</p>
+
+<ul>
+<li><p>یک سرور Ubuntu Linux که روی DigitalOcean اجرا می‌شود را برای میزبانی برنامه خود راه‌اندازی کنید.</p></li>
+
+<li><p>پیکربندی سرور را خودکار کنید &mdash; از جمله ایجاد حساب‌های کاربری، پیکربندی firewall و نصب نرم‌افزارهای لازم.</p></li>
+
+<li><p>فرآیند به‌روزرسانی برنامه و deploy کردن تغییرات روی سرور را خودکار کنید.</p></li>
+
+<li><p>چگونه برنامه خود را به عنوان یک سرویس background با استفاده از <a href="https://en.wikipedia.org/wiki/Systemd">systemd</a> و به عنوان یک کاربر non-root اجرا کنید.</p></li>
+
+<li><p>از Caddy به عنوان یک reverse proxy در مقابل برنامه خود استفاده کنید تا به طور خودکار گواهی‌های TLS را مدیریت کرده و اتصالات HTTPS را مدیریت کند.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="19.06-managing-and-automating-version-numbers.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="20.01-creating-a-digital-ocean-droplet.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "19.06-managing-and-automating-version-numbers.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "20.01-creating-a-digital-ocean-droplet.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

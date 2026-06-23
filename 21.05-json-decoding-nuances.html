@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>نکات دقیق رمزگشایی JSON &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="21.00-appendices.html">پیوست‌ها</a> &rsaquo; نکات دقیق رمزگشایی JSON</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="21.04-json-encoding-nuances.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="21.06-request-context-timeouts.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۲۱.۵.</div>
+			<h2 id="json-decoding-nuances">نکات دقیق رمزگشایی JSON</h2>
+
+<h4 id="decoding-into-go-arrays">رمزگشایی در آرایه‌های Go</h4>
+
+<p>هنگامی که یک آرایه JSON را در یک آرایه Go (نه slice) رمزگشایی می‌کنید، چند رفتار مهم وجود دارد که باید از آنها آگاه باشید:</p>
+
+<ul>
+<li>اگر آرایه Go کوچکتر از آرایه JSON باشد، عناصر اضافی آرایه JSON به طور خاموشی دور ریخته می‌شوند.</li>
+<li>اگر آرایه Go بزرگتر از آرایه JSON باشد، عناصر اضافی آرایه Go با مقادیر صفر خود تنظیم می‌شوند.</li>
+</ul>
+
+<p>به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="nx">js</span> <span class="o">:=</span> <span class="s">`</span><span class="s">[1, 2, 3]</span><span class="s">`</span>
+
+<span class="kd">var</span> <span class="nx">tooShortArray</span> <span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="kt">int</span>
+<span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">tooShortArray</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="kd">var</span> <span class="nx">tooLongArray</span> <span class="p">[</span><span class="mi">4</span><span class="p">]</span><span class="kt">int</span>
+<span class="nx">err</span> <span class="p">=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">tooLongArray</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;tooShortArray: %v\n&#34;</span><span class="p">,</span> <span class="nx">tooShortArray</span><span class="p">)</span>
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;tooLongArray: %v\n&#34;</span><span class="p">,</span> <span class="nx">tooLongArray</span><span class="p">)</span></pre>
+</figure>
+
+<p>چاپ خواهد شد:</p>
+
+<figure class="code plain">
+<pre>tooShortArray: [1 2]
+tooLongArray: [1 2 3 0]</pre>
+</figure>
+
+<h4 id="partial-json-decoding">رمزگشایی جزئی JSON</h4>
+
+<p>اگر مقدار زیادی ورودی JSON برای پردازش دارید و فقط به بخش کوچکی از آن نیاز دارید، اغلب می‌توانید از نوع <code>json.RawMessage</code> برای کمک به حل این مشکل استفاده کنید. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="c1">// Let&#39;s say that the only thing we&#39;re interested in is processing the &#34;genres&#34; array in
+</span><span class="c1"></span><span class="c1">// the following JSON object
+</span><span class="c1"></span><span class="nx">js</span> <span class="o">:=</span> <span class="s">`</span><span class="s">{</span><span class="s">&#34;title&#34;: &#34;Top Gun&#34;, &#34;genres&#34;: [&#34;action&#34;, &#34;romance&#34;], &#34;year&#34;: 1986}</span><span class="s">`</span>
+
+<span class="c1">// Decode the JSON object to a map[string]json.RawMessage type. The json.RawMessage 
+</span><span class="c1"></span><span class="c1">// values in the map will retain their original, undecoded, JSON values.
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">m</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="nx">json</span><span class="p">.</span><span class="nx">RawMessage</span>
+
+<span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">m</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// We can then access the JSON &#34;genres&#34; value from the map and decode it as normal using
+</span><span class="c1"></span><span class="c1">// the json.Unmarshal() function.
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">genres</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span>
+
+<span class="nx">err</span> <span class="p">=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">Unmarshal</span><span class="p">(</span><span class="nx">m</span><span class="p">[</span><span class="s">&#34;genres&#34;</span><span class="p">]</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">genres</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;genres: %v\n&#34;</span><span class="p">,</span> <span class="nx">genres</span><span class="p">)</span></pre>
+</figure>
+
+<p>این کد چاپ خواهد شد:</p>
+
+<figure class="code plain">
+<pre>genres: [action romance]</pre>
+</figure>
+
+<p>در این مثال ساده، استفاده از <code>json.RawMessage</code> کار زیادی برای ما ذخیره نمی‌کند. اما اگر نیاز به پردازش یک شیء JSON با ده‌ها یا صدها جفت کلید-مقدار دارید و فقط به چند مورد از آنها نیاز دارید، استفاده از این رویکرد می‌تواند تایپ زیادی را برای شما ذخیره کند.</p>
+
+<h4 id="decoding-into-the-any-type">رمزگشایی در نوع any</h4>
+
+<p>امکان رمزگشایی مقادیر JSON در نوع <code>any</code> وجود دارد. وقتی این کار را انجام می‌دهید، مقدار زیرینی که نوع <code>any</code> نگه می‌دارد به نوع مقدار JSON که رمزگشایی می‌شود بستگی دارد.</p>
+
+<table>
+<thead>
+<tr>
+<th>نوع JSON</th>
+<th>⇒</th>
+<th>نوع زیرین Go از any</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>JSON boolean</td>
+<td>⇒</td>
+<td><code>bool</code></td>
+</tr>
+
+<tr>
+<td>JSON string</td>
+<td>⇒</td>
+<td><code>string</code></td>
+</tr>
+
+<tr>
+<td>JSON number</td>
+<td>⇒</td>
+<td><code>float64</code></td>
+</tr>
+
+<tr>
+<td>JSON array</td>
+<td>⇒</td>
+<td><code>[]any</code></td>
+</tr>
+
+<tr>
+<td>JSON object</td>
+<td>⇒</td>
+<td><code>map[string]any</code></td>
+</tr>
+
+<tr>
+<td>JSON null</td>
+<td>⇒</td>
+<td><code>nil</code></td>
+</tr>
+</tbody>
+</table>
+<p>رمزگشایی در نوع <code>any</code> می‌تواند در شرایط زیر مفید باشد:</p>
+
+<ul>
+<li>شما از قبل نمی‌دانید دقیقاً چه چیزی را رمزگشایی می‌کنید.</li>
+<li>نیاز به رمزگشایی آرایه‌های JSON دارید که حاوی آیتم‌هایی با انواع JSON مختلف هستند.</li>
+<li>جفت کلید-مقدار در یک شیء JSON همیشه حاوی مقادیری با نوع JSON یکسان نیست.</li>
+</ul>
+
+<p>به عنوان مثال، کد زیر را در نظر بگیرید:</p>
+
+<figure class="code go">
+<pre><span class="c1">// This JSON array contains both JSON string and JSON boolean types.
+</span><span class="c1"></span><span class="nx">js</span> <span class="o">:=</span> <span class="s">`</span><span class="s">[&#34;foo&#34;, true]</span><span class="s">`</span>
+
+<span class="c1">// Decode the JSON into a []any slice.
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">s</span> <span class="p">[</span><span class="p">]</span><span class="nx">any</span>
+
+<span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">s</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// The first value in the slice will have the underlying Go type string, the second will
+</span><span class="c1"></span><span class="c1">// have the underlying Go type bool. We can then type assert them and print them out  
+</span><span class="c1"></span><span class="c1">// the values along with their underlying type.
+</span><span class="c1"></span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;item: 0; type: %T; value: %v\n&#34;</span><span class="p">,</span> <span class="nx">s</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">,</span> <span class="nx">s</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="p">.</span><span class="p">(</span><span class="kt">string</span><span class="p">)</span><span class="p">)</span>
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;item: 1; type: %T; value: %v\n&#34;</span><span class="p">,</span> <span class="nx">s</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="p">,</span> <span class="nx">s</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="p">.</span><span class="p">(</span><span class="kt">bool</span><span class="p">)</span><span class="p">)</span></pre>
+</figure>
+
+<p>این کد چاپ خواهد شد:</p>
+
+<figure class="code plain">
+<pre>item: 0; type: string; value: foo
+item: 1; type: bool; value: true</pre>
+</figure>
+
+<h4 id="decoding-a-json-number-into-an-any-type">رمزگشایی یک عدد JSON در نوع any</h4>
+
+<p>همانطور که در جدول بالا نشان داده شده است، وقتی یک عدد JSON را در نوع <code>any</code> رمزگشایی می‌کنید، مقدار نوع زیرین <code>float64</code> خواهد داشت &mdash; حتی اگر در JSON اصلی یک عدد صحیح باشد. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="nx">js</span> <span class="o">:=</span> <span class="s">`</span><span class="s">10</span><span class="s">`</span> <span class="c1">// This JSON number is an integer.
+</span><span class="c1"></span>
+<span class="kd">var</span> <span class="nx">n</span> <span class="nx">any</span>
+
+<span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">n</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;type: %T; value: %v\n&#34;</span><span class="p">,</span> <span class="nx">n</span><span class="p">,</span> <span class="nx">n</span><span class="p">)</span> </pre>
+</figure>
+
+<p>چاپ خواهد شد:</p>
+
+<figure class="code plain">
+<pre>type: float64; value: 10</pre>
+</figure>
+
+<p>اگر می‌خواهید مقدار را به صورت عدد صحیح (به جای <code>float64</code>) دریافت کنید، باید قبل از رمزگشایی متد <a href="https://golang.org/pkg/encoding/json/#Decoder.UseNumber"><code>UseNumber()</code></a> را روی نمونه <code>json.Decoder</code> خود فراخوانی کنید. این کار باعث می‌شود تمام اعداد JSON به نوع زیرین <a href="https://golang.org/pkg/encoding/json/#Number"><code>json.Number</code></a> به جای <code>float64</code> رمزگشایی شوند.</p>
+
+<p>سپس نوع <code>json.Number</code> متد <a href="https://golang.org/pkg/encoding/json/#Number.Int64"><code>Int64()</code></a> را ارائه می‌دهد که می‌توانید آن را برای دریافت عدد به صورت <code>int64</code> فراخوانی کنید، یا متد <a href="https://golang.org/pkg/encoding/json/#Number.String"><code>String()</code></a> برای دریافت عدد به صورت <code>string</code>. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="nx">js</span> <span class="o">:=</span> <span class="s">`</span><span class="s">10</span><span class="s">`</span>
+
+<span class="kd">var</span> <span class="nx">n</span> <span class="nx">any</span>
+
+<span class="nx">dec</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span>
+<span class="nx">dec</span><span class="p">.</span><span class="nf">UseNumber</span><span class="p">(</span><span class="p">)</span> <span class="c1">// Before using the decoder, call the UseNumber() method on it.
+</span><span class="c1"></span><span class="nx">err</span> <span class="o">:=</span> <span class="nx">dec</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">n</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// Type assert the any value to a json.Number, and then call the Int64() method
+</span><span class="c1"></span><span class="c1">// to get the number as a Go int64.
+</span><span class="c1"></span><span class="nx">nInt64</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">n</span><span class="p">.</span><span class="p">(</span><span class="nx">json</span><span class="p">.</span><span class="nx">Number</span><span class="p">)</span><span class="p">.</span><span class="nf">Int64</span><span class="p">(</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// Likewise, you can use the String() method to get the number as a Go string.
+</span><span class="c1"></span><span class="nx">nString</span> <span class="o">:=</span> <span class="nx">n</span><span class="p">.</span><span class="p">(</span><span class="nx">json</span><span class="p">.</span><span class="nx">Number</span><span class="p">)</span><span class="p">.</span><span class="nf">String</span><span class="p">(</span><span class="p">)</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;type: %T; value: %v\n&#34;</span><span class="p">,</span> <span class="nx">n</span><span class="p">,</span> <span class="nx">n</span><span class="p">)</span>
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;type: %T; value: %v\n&#34;</span><span class="p">,</span> <span class="nx">nInt64</span><span class="p">,</span> <span class="nx">nInt64</span><span class="p">)</span>
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;type: %T; value: %v\n&#34;</span><span class="p">,</span> <span class="nx">nString</span><span class="p">,</span> <span class="nx">nString</span><span class="p">)</span></pre>
+</figure>
+
+<p>این کد چاپ خواهد شد:</p>
+
+<figure class="code plain">
+<pre>type: json.Number; value: 10
+type: int64; value: 10
+type: string; value: 10</pre>
+</figure>
+
+<h4 id="struct-tag-directives">دستورالعمل‌های برچسب struct</h4>
+
+<p>استفاده از برچسب struct <code>json:&quot;-&quot;</code> روی یک فیلد struct باعث می‌شود هنگام رمزگشایی JSON <em>نادیده گرفته</em> شود، حتی اگر ورودی JSON حاوی جفت کلید-مقدار مربوطه باشد. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="nx">js</span> <span class="o">:=</span> <span class="s">`</span><span class="s">{</span><span class="s">&#34;name&#34;: &#34;alice&#34;, &#34;age&#34;: 21}</span><span class="s">`</span>
+
+<span class="kd">var</span> <span class="nx">person</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">Name</span> <span class="kt">string</span> <span class="s">`</span><span class="s">json:&#34;name&#34;</span><span class="s">`</span>
+    <span class="nx">Age</span>  <span class="kt">int32</span> <span class="s">`</span><span class="s">json:&#34;-&#34;</span><span class="s">`</span>
+<span class="p">}</span>
+
+<span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">NewDecoder</span><span class="p">(</span><span class="nx">strings</span><span class="p">.</span><span class="nf">NewReader</span><span class="p">(</span><span class="nx">js</span><span class="p">)</span><span class="p">)</span><span class="p">.</span><span class="nf">Decode</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">person</span><span class="p">)</span>
+<span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+    <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;%+v&#34;</span><span class="p">,</span> <span class="nx">person</span><span class="p">)</span></pre>
+</figure>
+
+<p>چاپ خواهد شد:</p>
+
+<figure class="code plain">
+<pre>{Name:alice Age:0}</pre>
+</figure>
+
+<p>دستورالعمل‌های برچسب struct <code>omitzero</code> و <code>omitempty</code> هیچ تأثیری بر رفتار رمزگشایی JSON ندارند.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="21.04-json-encoding-nuances.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="21.06-request-context-timeouts.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "21.04-json-encoding-nuances.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "21.06-request-context-timeouts.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

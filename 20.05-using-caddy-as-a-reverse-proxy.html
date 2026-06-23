@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>استفاده از Caddy به عنوان یک پروکسی معکوس &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="20.00-deployment-and-hosting.html">استقرار و میزبانی</a> &rsaquo; استفاده از Caddy به عنوان یک پروکسی معکوس</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="20.04-running-the-api-as-a-background-service.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="21.00-appendices.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۲۰.۵.</div>
+			<h2 id="using-caddy-as-a-reverse-proxy">استفاده از Caddy به عنوان یک پروکسی معکوس</h2>
+
+<p>ما اکنون در موقعیتی قرار داریم که برنامه API Greenlight ما به عنوان یک <em>background service</em> روی droplet ما در حال اجرا است و روی پورت <code>4000</code> به درخواست‌های HTTP گوش می‌دهد. همچنین Caddy به عنوان یک background service در حال اجرا است و روی پورت <code>80</code> به درخواست‌های HTTP گوش می‌دهد.</p>
+
+<p>بنابراین مرحله بعدی در تنظیم محیط production ما، پیکربندی Caddy برای عمل به عنوان یک <em>reverse proxy</em> و ارسال درخواست‌های HTTP دریافتی به API ما است.</p>
+
+<p>ساده‌ترین راه برای پیکربندی Caddy، ایجاد یک <em>Caddyfile</em> است &mdash; که شامل مجموعه‌ای از قوانین توصیف‌کننده عملکرد مورد نظر Caddy می‌باشد. اگر همراه ما هستید، لطفاً یک فایل جدید <code>remote/production/Caddyfile</code> در دایرکتوری پروژه خود ایجاد کنید:</p>
+
+<figure class="code bash">
+<pre>$ touch remote/production/Caddyfile</pre>
+</figure>
+
+<p>و سپس محتوای زیر را اضافه کنید و مطمئن شوید آدرس IP را با آدرس droplet خود جایگزین کرده‌اید:</p>
+
+<figure class="code shell">
+<figcaption>فایل: remote/production/Caddyfile</figcaption>
+<pre>http://161.35.71.158 <span class="o">{</span>
+  reverse_proxy localhost:4000
+<span class="o">}</span></pre>
+</figure>
+
+<p>همانطور که احتمالاً با دیدن آن حدس می‌زنید، این قانون به Caddy می‌گوید که می‌خواهیم به درخواست‌های HTTP روی <code>161.35.71.158</code> گوش دهد و سپس به عنوان یک reverse proxy عمل کند و درخواست را به پورت <code>4000</code> روی ماشین محلی (جایی که API ما گوش می‌دهد) ارسال کند.</p>
+
+<aside class="hint"><p>
+<strong>پیشنهاد:</strong> Caddyfile تنظیمات موجود <em>زیادی</em> دارد و ما برخی از رایج‌ترین آن‌ها را در طول این فصل نشان خواهیم داد. اما اگر قصد دارید Caddy را در پروژه‌های production خود استفاده کنید، توصیه می‌کنم مستندات <a href="https://caddyserver.com/docs/caddyfile">رسمی Caddyfile</a> را مطالعه کنید که بسیار عالی است.
+</p></aside>
+
+<p>کار بعدی که باید انجام دهیم آپلود این Caddyfile به droplet و بازخوانی Caddy برای اعمال تغییرات است.</p>
+
+<p>برای مدیریت این کار، بیایید rule <code>production/deploy/api</code> خود را به‌روزرسانی کنیم. این از همان الگوی پایه‌ای که در فصل قبلی برای آپلود فایل <code>api.service</code> استفاده کردیم پیروی می‌کند، اما به جای آن Caddyfile خود را به <code>/etc/caddy/Caddyfile</code> روی سرور کپی خواهیم کرد.</p>
+
+<p>به این صورت:</p>
+
+<figure class="code shell">
+<figcaption>فایل: Makefile</figcaption>
+<pre>
+<span class="c1"># ==================================================================================== #</span>
+<span class="c1"># PRODUCTION</span>
+<span class="c1"># ==================================================================================== #</span>
+
+<span class="nv">production_host_ip</span> <span class="o">=</span> <span class="s1">&#39;161.35.71.158&#39;</span>
+
+...
+
+<span class="c1">## production/deploy/api: deploy the api to production</span>
+.PHONY: production/deploy/api
+production/deploy/api:
+	rsync -P ./bin/linux_amd64/api greenlight@<span class="si">${</span><span class="nv">production_host_ip</span><span class="si">}</span>:~
+	rsync -rP --delete ./migrations greenlight@<span class="si">${</span><span class="nv">production_host_ip</span><span class="si">}</span>:~
+	rsync -P ./remote/production/api.service greenlight@<span class="si">${</span><span class="nv">production_host_ip</span><span class="si">}</span>:~
+	rsync -P ./remote/production/Caddyfile greenlight@<span class="si">${</span><span class="nv">production_host_ip</span><span class="si">}</span>:~
+	ssh -t greenlight@<span class="si">${</span><span class="nv">production_host_ip</span><span class="si">}</span> <span class="s1">&#39;\
+</span><span class="s1">		migrate -path ~/migrations -database $$GREENLIGHT_DB_DSN up \
+</span><span class="s1">		&amp;&amp; sudo mv ~/api.service /etc/systemd/system/ \
+</span><span class="s1">		&amp;&amp; sudo systemctl enable api \
+</span><span class="s1">		&amp;&amp; sudo systemctl restart api \
+</span><span class="s1">		&amp;&amp; sudo mv ~/Caddyfile /etc/caddy/ \
+</span><span class="s1">		&amp;&amp; sudo systemctl reload caddy \
+</span><span class="s1">	&#39;</span></pre>
+</figure>
+
+<p>پس از اعمال این تغییر، rule را برای استقرار Caddyfile در production اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ make production/deploy/api
+<samp>rsync -P ./bin/linux_amd64/api greenlight@&#34;161.35.71.158&#34;:~
+api
+      7,634,944 100%   70.67MB/s    0:00:00 (xfr#1, to-chk=0/1)
+rsync -rP --delete ./migrations greenlight@&#34;161.35.71.158&#34;:~
+sending incremental file list
+migrations/000001_create_movies_table.down.sql
+             28 100%    0.00kB/s    0:00:00 (xfr#1, to-chk=11/13)
+migrations/000001_create_movies_table.up.sql
+            286 100%  279.30kB/s    0:00:00 (xfr#2, to-chk=10/13)
+migrations/000002_add_movies_check_constraints.down.sql
+            198 100%  193.36kB/s    0:00:00 (xfr#3, to-chk=9/13)
+migrations/000002_add_movies_check_constraints.up.sql
+            289 100%  282.23kB/s    0:00:00 (xfr#4, to-chk=8/13)
+migrations/000003_add_movies_indexes.down.sql
+             78 100%   76.17kB/s    0:00:00 (xfr#5, to-chk=7/13)
+migrations/000003_add_movies_indexes.up.sql
+            170 100%  166.02kB/s    0:00:00 (xfr#6, to-chk=6/13)
+migrations/000004_create_users_table.down.sql
+             27 100%   26.37kB/s    0:00:00 (xfr#7, to-chk=5/13)
+migrations/000004_create_users_table.up.sql
+            294 100%  287.11kB/s    0:00:00 (xfr#8, to-chk=4/13)
+migrations/000005_create_tokens_table.down.sql
+             28 100%   27.34kB/s    0:00:00 (xfr#9, to-chk=3/13)
+migrations/000005_create_tokens_table.up.sql
+            203 100%  198.24kB/s    0:00:00 (xfr#10, to-chk=2/13)
+migrations/000006_add_permissions.down.sql
+             73 100%   71.29kB/s    0:00:00 (xfr#11, to-chk=1/13)
+migrations/000006_add_permissions.up.sql
+            452 100%  441.41kB/s    0:00:00 (xfr#12, to-chk=0/13)
+rsync -P ./remote/production/api.service greenlight@&#34;161.35.71.158&#34;:~
+api.service
+          1,266 100%    0.00kB/s    0:00:00 (xfr#1, to-chk=0/1)
+rsync -P ./remote/production/Caddyfile greenlight@&#34;161.35.71.158&#34;:~
+Caddyfile
+            293 100%    0.00kB/s    0:00:00 (xfr#1, to-chk=0/1)
+ssh -t greenlight@&#34;161.35.71.158&#34; &#39;\
+        migrate -path ~/migrations -database $GREENLIGHT_DB_DSN up \
+        &amp;&amp; sudo mv ~/api.service /etc/systemd/system/ \
+        &amp;&amp; sudo systemctl enable api \
+        &amp;&amp; sudo systemctl restart api \
+        &amp;&amp; sudo mv ~/Caddyfile /etc/caddy/ \
+        &amp;&amp; sudo systemctl reload caddy \
+&#39;
+no change</samp>
+[sudo] password for greenlight: 
+<samp>Connection to 161.35.71.158 closed.</samp></pre>
+</figure>
+
+<p>باید ببینید که Caddyfile کپی شده و بازخوانی بدون هیچ خطایی اجرا می‌شود.</p>
+
+<p>در این مرحله می‌توانید <code>http://&lt;your_droplet_ip&gt;/v1/healthcheck</code> را در مرورگر وب خود باز کنید و باید ببینید که درخواست با موفقیت از Caddy به API ما ارسال شده است. به این صورت:</p>
+
+<figure class="img">
+<img src="assets/img/20.05-01.png" alt="20.05-01.png" />
+</figure>
+
+<h3 id="blocking-access-to-application-metrics">مسدود کردن دسترسی به معیارهای برنامه</h3>
+
+<p>در حالی که در مرورگر هستیم، بیایید به endpoint <code>GET /debug/vars</code> برویم که معیارهای برنامه ما را نمایش می‌دهد. باید پاسخی مشابه این ببینید:</p>
+
+<figure class="img">
+<img src="assets/img/20.05-02.png" alt="20.05-02.png" />
+</figure>
+
+<p>همانطور که قبلاً اشاره کردیم، در دسترس بودن عمومی این اطلاعات حساس واقعاً ایده خوبی نیست.</p>
+
+<p>خوشبختانه، مسدود کردن دسترسی به این بخش با اضافه کردن یک <a href="https://caddyserver.com/docs/caddyfile/directives/respond"><code>respond</code></a> directive جدید به Caddyfile بسیار آسان است. به این صورت:</p>
+
+<figure class="code shell">
+<figcaption>فایل: remote/production/Caddyfile</figcaption>
+<pre>http://161.35.71.158 <span class="o">{</span>
+  respond /debug/* <span class="s2">&#34;Not Permitted&#34;</span> <span class="m">403</span>
+  reverse_proxy localhost:4000
+<span class="o">}</span></pre>
+</figure>
+
+<p>با این directive جدید، به Caddy دستور می‌دهیم که برای تمام درخواست‌هایی که مسیر URL آن‌ها با <code>/debug/</code> شروع می‌شود، پاسخ <code>403 Forbidden</code> ارسال کند.</p>
+
+<p>این تغییر را دوباره در production مستقر کنید و هنگامی که صفحه را در مرورگر وب خود بازخوانی می‌کنید، باید ببینید که اکنون مسدود شده است.</p>
+
+<figure class="code bash">
+<pre>$ make production/deploy/api</pre>
+</figure>
+
+<figure class="img">
+<img src="assets/img/20.05-03.png" alt="20.05-03.png" />
+</figure>
+
+<p>اگرچه معیارها دیگر به صورت عمومی در دسترس نیستند، همچنان می‌توانید با اتصال به droplet از طریق SSH و ارسال درخواست به <code>http://localhost:4000/debug/vars</code> به آن‌ها دسترسی داشته باشید.</p>
+
+<figure class="code bash">
+<pre>$ make production/connect 
+greenlight@greenlight-production:~$ curl http://localhost:4000/debug/vars
+<samp>{
+&#34;cmdline&#34;: ...,
+&#34;database&#34;: ...,
+&#34;goroutines&#34;: 7,
+&#34;memstats&#34;: ...,
+&#34;timestamp&#34;: 1618820037,
+&#34;total_processing_time_μs&#34;: 1305,
+&#34;total_requests_received&#34;: 8,
+&#34;total_responses_sent&#34;: 7,
+&#34;total_responses_sent_by_status&#34;: {&#34;200&#34;: 3, &#34;404&#34;: 4},
+&#34;version&#34;: &#34;v1.0.0-1-gf27fd0f&#34;
+}</samp></pre>
+</figure>
+
+<p>یا به طور جایگزین، می‌توانید یک SSH tunnel به droplet باز کنید و آن‌ها را با استفاده از مرورگر وب روی <em>ماشین محلی</em> خود مشاهده کنید. به عنوان مثال، می‌توانید یک SSH tunnel بین پورت <code>4000</code> روی droplet و پورت <code>9999</code> روی ماشین محلی خود با اجرای دستور زیر باز کنید (مطمئن شوید <em>هر دو</em> آدرس IP را با آدرس IP droplet خود جایگزین کرده‌اید):</p>
+
+<figure class="code bash">
+<pre>$ ssh -L :9999:161.35.71.158:4000 greenlight@161.35.71.158</pre>
+</figure>
+
+<p>در حالی که آن tunnel فعال است، باید بتوانید <a href="http://localhost:9999/debug/vars"><code>http://localhost:9999/debug/vars</code></a> را در مرورگر وب خود باز کنید و معیارهای برنامه خود را ببینید، به این صورت:</p>
+
+<figure class="img">
+<img src="assets/img/20.05-04.png" alt="20.05-04.png" />
+</figure>
+
+<h3 id="using-a-domain-name">استفاده از یک نام دامنه</h3>
+
+<p>برای مرحله بعدی استقرار خود، Caddy را طوری پیکربندی خواهیم کرد که بتوانیم از طریق یک نام دامنه به droplet خود دسترسی داشته باشیم، به جای نیاز به استفاده از آدرس IP.</p>
+
+<p>اگر می‌خواهید در این مرحله از کتاب همراه ما باشید، به یک نام دامنه و توانایی به‌روزرسانی رکوردهای DNS برای آن نام دامنه نیاز دارید. اگر در حال حاضر نام دامنه‌ای در دسترس ندارید، می‌توانید از طریق سرویس <a href="https://www.freenom.com">Freenom</a> یکی به صورت رایگان دریافت کنید.</p>
+
+<p>من از دامنه <code>greenlight.alexedwards.net</code> در کد نمونه اینجا استفاده خواهم کرد، اما اگر همراه ما هستید باید آن را با دامنه خود جایگزین کنید.</p>
+
+<p>اولین کاری که باید انجام دهید پیکربندی رکوردهای DNS برای نام دامنه خود به گونه‌ای است که شامل یک رکورد <code>A</code> باشد که به آدرس IP droplet شما اشاره کند. بنابراین در مورد من، رکورد DNS به این صورت خواهد بود:</p>
+
+<figure class="code plain">
+<pre>A     greenlight.alexedwards.net     161.35.71.158</pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر مطمئن نیستید چگونه رکوردهای DNS خود را تغییر دهید، ثبت‌کننده نام دامنه شما باید راهنمایی و مستندات ارائه دهد.
+</p></aside>
+
+<p>پس از ایجاد رکورد DNS، وظیفه بعدی به‌روزرسانی Caddyfile برای استفاده از نام دامنه به جای آدرس IP droplet است. آن را به این صورت جایگزین کنید (به یاد داشته باشید <code>greenlight.alexedwards.net</code> را با نام دامنه خود جایگزین کنید):</p>
+
+<figure class="code shell">
+<figcaption>فایل: remote/production/Caddyfile</figcaption>
+<pre>http://greenlight.alexedwards.net <span class="o">{</span>
+  respond /debug/* <span class="s2">&#34;Not Permitted&#34;</span> <span class="m">403</span>
+  reverse_proxy localhost:4000
+<span class="o">}</span></pre>
+</figure>
+
+<p>و سپس Caddyfile را دوباره به droplet خود مستقر کنید:</p>
+
+<figure class="code bash">
+<pre>$ make production/deploy/api</pre>
+</figure>
+
+<p>پس از انجام این کار، اکنون باید بتوانید از طریق نام دامنه خود به API دسترسی داشته باشید. <code>http://&lt;your_domain_name&gt;/v1/healthcheck</code> را در مرورگر خود باز کنید:</p>
+
+<figure class="img">
+<img src="assets/img/20.05-05.png" alt="20.05-05.png" />
+</figure>
+
+<h3 id="enabling-https">فعال‌سازی HTTPS</h3>
+
+<p>اکنون که یک نام دامنه تنظیم کرده‌ایم، می‌توانیم از یکی از ویژگی‌های اصلی Caddy استفاده کنیم: <em>automatic HTTPS</em>.</p>
+
+<p>Caddy به طور خودکار تأمین و تمدید گواهی‌نامه‌های TLS دامنه شما از طریق Let's Encrypt یا ZeroSSL (بسته به در دسترس بودن) و همچنین انتقال تمام درخواست‌های HTTP به HTTPS را مدیریت می‌کند. راه‌اندازی آن ساده، بسیار قوی و صرفه‌جویی در هزینه‌های پیگیری دستی تمدید گواهی‌نامه‌ها است.</p>
+
+<p>برای فعال‌سازی این قابلیت، فقط باید <code>Caddyfile</code> خود را به‌روزرسانی کنیم تا به این صورت درآید:</p>
+
+<figure class="code shell">
+<figcaption>فایل: remote/production/Caddyfile</figcaption>
+<pre><span class="c1"># Set the email address that should be used to contact you if there is a problem with</span> 
+<span class="c1"># your TLS certificates.</span>
+<span class="o">{</span>
+  email you@example.com
+<span class="o">}</span>
+
+<span class="c1"># Remove the http:// prefix from your site address.</span>
+greenlight.alexedwards.net <span class="o">{</span>
+  respond /debug/* <span class="s2">&#34;Not Permitted&#34;</span> <span class="m">403</span>
+  reverse_proxy localhost:4000
+<span class="o">}</span></pre>
+</figure>
+
+<p>برای آخرین بار، این به‌روزرسانی Caddyfile را به droplet خود مستقر کنید&hellip;</p>
+
+<figure class="code bash">
+<pre>$ make production/deploy/api</pre>
+</figure>
+
+<p>و سپس هنگامی که صفحه را در مرورگر وب خود بازخوانی می‌کنید، باید ببینید که به طور خودکار به نسخه HTTPS صفحه هدایت شده است.</p>
+
+<figure class="img">
+<img src="assets/img/20.05-06.png" alt="20.05-06.png" />
+</figure>
+
+<aside class="important"><p>
+<strong>مهم:</strong> اگر هنگام بازخوانی صفحه با خطایی مواجه شدید، ۳۰ ثانیه صبر کنید و دوباره امتحان کنید. گاهی اوقات Caddy برای تکمیل تنظیم گواهی‌نامه برای اولین بار به زمان نیاز دارد.
+</p></aside>
+
+<p>اگر از Firefox استفاده می‌کنید، همچنین می‌توانید با فشار دادن <code>Ctrl+i</code> اطلاعات صفحه را در مرورگر خود مشاهده کنید. باید مشابه این باشد:</p>
+
+<figure class="img">
+<img src="assets/img/20.05-07.png" alt="20.05-07.png" />
+</figure>
+
+<p>از اینجا می‌توانیم ببینیم که اتصال با موفقیت با استفاده از TLS 1.3 و مجموعه رمز <code>TLS_AES_128_GCM_SHA256</code> رمزگذاری شده است.</p>
+
+<p>در نهایت، اگر می‌خواهید، می‌توانید از <code>curl</code> برای ارسال یک درخواست HTTP به برنامه استفاده کنید. باید ببینید که یک <code>308 Permanent Redirect</code> به نسخه HTTPS برنامه صادر می‌شود، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl -i http://greenlight.alexedwards.net
+<samp>HTTP/1.1 308 Permanent Redirect
+Connection: close
+Location: https://greenlight.alexedwards.net/
+Server: Caddy
+Date: Mon, 19 Apr 2021 08:36:20 GMT
+Content-Length: 0</samp></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="scaling-the-infrastructure">مقیاس‌بندی زیرساخت</h4>
+
+<p>قبل از راه‌اندازی یک سرویس جدید، انجام یک آزمایش فکری و پرسیدن این سؤال از خود معمولاً مفید است: <em>با افزایش ترافیک به سرویس چه اتفاقی می‌افتد؟ چگونه آن را مدیریت می‌کنم؟</em></p>
+
+<p>برای این پروژه، مسیر مشخصی وجود دارد که می‌توانیم برای مقیاس‌بندی و تطبیق زیرساخت با رشد دنبال کنیم. به طور بسیار کلی، این مسیر تقریباً به این صورت است:</p>
+
+<ul>
+<li>استفاده از یک droplet کم‌توان واحد که Caddy، PostgreSQL و برنامه Go را اجرا می‌کند. این همان چیزی است که در حال حاضر داریم.</li>
+<li>↓ ارتقای droplet در صورت نیاز به CPU و/یا حافظه بیشتر.</li>
+<li>↓ انتقال PostgreSQL به یک droplet جداگانه، یا استفاده از یک <a href="https://www.digitalocean.com/products/managed-databases/">managed database</a>.</li>
+<li>↓ ارتقای droplet‌ها/managed database‌ها در صورت نیاز به CPU و/یا حافظه بیشتر.</li>
+<li>اگر droplet اجرای برنامه Go یک تنگنا باشد:
+
+<ul>
+<li>↓ پروفایل و بهینه‌سازی کد برنامه Go خود.</li>
+<li>↓ اجرای برنامه Go روی چندین droplet، در پشت یک load balancer.</li>
+</ul></li>
+<li>اگر دیتابیس PostgreSQL یک تنگنا باشد:
+
+<ul>
+<li>↓ پروفایل و بهینه‌سازی تنظیمات دیتابیس و query‌های دیتابیس.</li>
+<li>↓ در صورت مناسب بودن، کش کردن نتایج query‌های پرهزینه/مکرر دیتابیس.</li>
+<li>↓ در صورت مناسب بودن، انتقال برخی عملیات به یک in-memory database مانند Redis.</li>
+<li>↓ شروع استفاده از database replica‌های فقط-خواندنی برای query‌ها در صورت امکان.</li>
+<li>↓ شروع sharding دیتابیس.</li>
+</ul></li>
+</ul>
+
+<p>در پروژه‌های دیگر، این مراحل و ترتیب آن‌ها احتمالاً متفاوت خواهد بود. و در برخی موارد، ممکن است بر اساس الزامات تجاری، برآوردهای ترافیک و نتایج تست بار، منطقی باشد که مستقیماً به یک معماری پیچیده‌تر بپردازیم.</p>
+
+<p>اما اختصاص دادن لحظه‌ای کوتاه برای انجام چنین آزمایش فکری خوب است. اگر بتوانید مسیر مشخصی ببینید، این اطمینان مثبتی فراهم می‌کند که رشد می‌تواند بدون بهینه‌سازی زودهنگام زیرساخت یا برنامه مدیریت شود. در حالی که اگر نتوانید مسیر مشخصی برای مدیریت رشد ببینید، این مشکل بالقوه‌ای را برجسته می‌کند و ممکن است منطقی باشد انتخاب‌های زیرساخت خود را بازنگری کنید.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="20.04-running-the-api-as-a-background-service.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="21.00-appendices.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "20.04-running-the-api-as-a-background-service.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "21.00-appendices.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

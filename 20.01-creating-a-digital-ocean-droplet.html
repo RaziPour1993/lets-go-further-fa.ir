@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ایجاد یک droplet در DigitalOcean &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="20.00-deployment-and-hosting.html">استقرار و میزبانی</a> &rsaquo; ایجاد یک droplet در DigitalOcean</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="20.00-deployment-and-hosting.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="20.02-server-configuration-and-installing-software.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۲۰.۱.</div>
+			<h2 id="creating-a-digitalocean-droplet">ایجاد یک droplet در DigitalOcean</h2>
+
+<p>اولین کاری که باید انجام دهیم این است که یک سرور در DigitalOcean برای میزبانی برنامه خود راه‌اندازی کنیم.</p>
+
+<p>به طور دقیق‌تر، آنچه قرار است راه‌اندازی کنیم در واقع یک <em>ماشین مجازی</em> است که در اصطلاحات DigitalOcean به آن <a href="https://www.digitalocean.com/products/droplets/"><em>droplet</em></a> گفته می‌شود.</p>
+
+<p>اگر می‌خواهید در این مرحله از کتاب همراه ما باشید، باید اگر قبلاً حساب DigitalOcean ندارید، <a href="https://cloud.digitalocean.com/registrations/new">یک حساب DigitalOcean ثبت کنید</a>. در فرآیند ثبت‌نام، از شما خواسته می‌شود آدرس ایمیل خود را تأیید کنید و سپس حداقل ۵ دلار اعتبار پیش‌پرداخت به حساب خود با استفاده از کارت اعتباری/دبیت یا PayPal اضافه کنید.</p>
+
+<p>پس از تکمیل ثبت‌نام و اضافه کردن اعتبار، باید با پنل کنترل حساب خود مواجه شوید که ظاهری مشابه این خواهد داشت:</p>
+
+<figure class="img">
+<img src="assets/img/20.01-02.png" alt="20.01-02.png" />
+</figure>
+
+<h3 id="creating-an-ssh-key">ایجاد یک کلید SSH</h3>
+
+<p>برای ورود به droplet‌ها در حساب DigitalOcean خود به یک <em>جفت کلید SSH</em> نیاز دارید.</p>
+
+<aside class="hint"><p>
+<strong>پیشنهاد:</strong> اگر با SSH، کلیدهای SSH یا <a href="https://en.wikipedia.org/wiki/Public-key_cryptography">رمزنگاری کلید عمومی</a> به طور کلی آشنا نیستید، توصیه می‌کنم قبل از ادامه، نیمه اول <a href="https://www.digitalocean.com/community/tutorials/ssh-essentials-working-with-ssh-servers-clients-and-keys">این راهنما</a> را بخوانید تا یک دید کلی به دست آورید.
+</p></aside>
+
+<p>اگر قبلاً یک جفت کلید SSH دارید که می‌خواهید برای این هدف استفاده کنید، عالی است و می‌توانید به بخش بعدی بروید.</p>
+
+<p>اما اگر ندارید، باید با استفاده از دستور <a href="https://www.ssh.com/ssh/keygen/"><code>ssh-keygen</code></a> روی ماشین محلی خود یک جفت کلید ایجاد کنید. مشابه این:</p>
+
+<figure class="code bash">
+<pre>$ ssh-keygen -t rsa -b 4096 -C &#34;greenlight@greenlight.alexedwards.net&#34; -f $HOME/.ssh/id_rsa_greenlight
+<samp>Generating public/private rsa key pair.</samp>
+Enter passphrase (empty for no passphrase): 
+Enter same passphrase again: 
+<samp>Your identification has been saved in /home/alex/.ssh/id_rsa_greenlight
+Your public key has been saved in /home/alex/.ssh/id_rsa_greenlight.pub
+The key fingerprint is:
+SHA256:MXASjIyE1p2BAGZ70zkUV058rA65hm3sxdIcnWLGkwg greenlight@greenlight.alexedwards.net
+The key's randomart image is:
++---[RSA 4096]----+
+|o*+oo*Bo+o.      |
+|+.oo=E++o. o     |
+|.. o +. *.= .    |
+|  . . .+ % o     |
+|      + S +      |
+|     . B *       |
+|      + o        |
+|       .         |
+|                 |
++----[SHA256]-----+</samp></pre>
+</figure>
+
+<p>این کار دو فایل جدید در پوشه <code>$HOME/.ssh</code> شما ایجاد می‌کند:</p>
+
+<ul>
+<li>فایل <code>$HOME/.ssh/id_rsa_greenlight</code> شامل <em>کلید خصوصی</em> شماست. مطمئن شوید این فایل را ایمن نگه می‌دارید، زیرا هر کسی که به آن دسترسی داشته باشد می‌تواند هویت شما را جعل کند.</li>
+<li>فایل <code>$HOME/.ssh/id_rsa_greenlight.pub</code> شامل <em>کلید عمومی</em> شماست. ما یک نسخه از این کلید عمومی را به DigitalOcean آپلود خواهیم کرد.</li>
+</ul>
+
+<p>اگر فایل کلید عمومی خود را در یک ویرایشگر متن باز کنید، باید محتوایی مشابه این ببینید (شکست خطوط برای خوانایی اضافه شده است):</p>
+
+<figure class="code plain">
+<pre>ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDBheUdwyzUt056EsvUidpaGqL3zodDAffHbVVPPN7AJal5/oL6
+hzmpPoCGIZueU3Fra2BPzrVtBTsNLOm0UwyQ3G8D474ETsWqlgtU3M3DBvdeI0sAaQdGxH8SkgUGswRUPNNzVG3V
+xvu5aOludfZ0J1kKEkS1PzWXRll2YoKlzSO42Ne0Gzo++ZdbQWl0Y/C0sLb2sBBviIxXHU8dXmp3823yUErqkWrF
+ZGGBhAco9t18gUe6MLei1+AyK+VHnRbCYvStrId7qExEs2dPzCmaEec01wCnLJ6LaRYZQnFpBRuzIZ9dTwwsJH+T
+cXGo87x8MRnGY6nKNVoz8lupbSyjxkHw3PBTfkelJh+tNKiFzxs8J8WiHDfJKzrKDDQVUGbE3TYZXddGSxvi+rv0
+Sfrf85zgvPjRVa2E6tjTl6nD8CnC+3wlU/01gRjVxVtPx7B9n51f+k8n2vMm8UozAv6+YruE1zZoHRHw9IvPCEy3
+5B4l6GJxWzAqzjTns7kJR3Qk+xzcu2jOAehc+Do8MMx+xegzOzlgRY3mbPx8jbB3L1WmjNF6vV2BrJR/NxKoRgTf
+nAQA44JaevaG4+KpbVZvkvSNoaI8uP6z8b5AptUHz/QO9Gc5M+n2EAPFjv/lNMN+0g5ZmMH8n6NpBXzP9Qmgujgn
+hsGP+GmI4ZgvuUgjTQ== greenlight@greenlight.alexedwards.net</pre>
+</figure>
+
+<p>و اگر دستور <code>ssh-add -l</code> را اجرا کنید، باید کلید SSH جدید خود را در خروجی ببینید، مشابه این:</p>
+
+<figure class="code bash">
+<pre>$ ssh-add -l
+<samp>4096 SHA256:MXASjIyE1p2BAGZ70zkUV058rA65hm3sxdIcnWLGkwg greenlight@greenlight.alexedwards.net (RSA)</samp></pre>
+</figure>
+
+<p>اگر کلید خود را در لیست نمی‌بینید، لطفاً آن را به <em>SSH agent</em> خود اضافه کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ ssh-add $HOME/.ssh/id_rsa_greenlight
+<samp>Enter passphrase for /home/alex/.ssh/id_rsa_greenlight: 
+Identity added: /home/alex/.ssh/id_rsa_greenlight (greenlight@greenlight.alexedwards.net)</samp></pre>
+</figure>
+
+<h3 id="adding-the-ssh-key-to-digitalocean">اضافه کردن کلید SSH به DigitalOcean</h3>
+
+<p>حالا که یک جفت کلید SSH دارید که می‌توانید استفاده کنید، به پنل کنترل DigitalOcean خود برگردید و به تب <strong>Settings › Security</strong> بروید.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-03.png" alt="20.01-03.png" />
+</figure>
+
+<p>روی دکمه <strong>Add SSH Key</strong> کلیک کنید، سپس در پنجره بازشو که ظاهر می‌شود، متن فایل کلید عمومی <code>$HOME/.ssh/id_rsa_greenlight.pub</em> خود را وارد کنید، یک نام به یاد ماندنی به آن بدهید و فرم را ارسال کنید، مشابه اسکرین‌شات زیر.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-04.png" alt="20.01-04.png" />
+</figure>
+
+<p>صفحه باید به‌روز شود و تأیید کند که کلید SSH شما با موفقیت اضافه شده است، به این صورت:</p>
+
+<figure class="img">
+<img src="assets/img/20.01-05.png" alt="20.01-05.png" />
+</figure>
+
+<h3 id="creating-a-droplet">ایجاد یک droplet</h3>
+
+<p>حالا که یک کلید SSH معتبر به حساب خود اضافه کرده‌اید، زمان آن رسیده که واقعاً یک droplet ایجاد کنیم.</p>
+
+<p>چند راه مختلف برای این کار وجود دارد. امکان انجام آن به صورت برنامه‌نویسی از طریق <a href="https://developers.digitalocean.com/documentation/v2/">DigitalOcean API</a> یا با استفاده از <a href="https://www.digitalocean.com/community/tutorials/how-to-use-doctl-the-official-digitalocean-command-line-client">ابزار خط فرمان</a> رسمی وجود دارد، و اگر نیاز به ایجاد یا مدیریت تعداد زیادی سرور دارید، توصیه می‌کنم از این‌ها استفاده کنید.</p>
+
+<p>یا به جای آن، می‌توانید یک droplet را به صورت دستی از طریق پنل کنترل خود در وب‌سایت DigitalOcean ایجاد کنید. این رویکردی است که در این کتاب استفاده خواهیم کرد، تا حدی به این دلیل که به عنوان یک کار یک‌باره به اندازه کافی ساده است، و تا حدی به این دلیل که دید کلی از تنظیمات droplet در دسترس را ارائه می‌دهد اگر قبلاً از DigitalOcean استفاده نکرده باشید.</p>
+
+<p>روی دکمه سبز <strong>Create</strong> در گوشه بالا سمت راست کلیک کنید و <strong>Droplets</strong> را از منوی کشویی انتخاب کنید:</p>
+
+<figure class="img">
+<img src="assets/img/20.01-06.png" alt="20.01-06.png" />
+</figure>
+
+<p>این شما را به صفحه گزینه‌ها برای ایجاد یک droplet جدید می‌برد. اولین چیزی که باید انتخاب کنید مرکز داده‌ای است که droplet شما به صورت فیزیکی در آن میزبانی خواهد شد. من <strong>Frankfurt</strong> را انتخاب می‌کنم، اما در صورت تمایل می‌توانید مکان دیگری انتخاب کنید.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-07.png" alt="20.01-07.png" />
+</figure>
+
+<p>چیز بعدی که باید انتخاب کنید سیستم‌عامل برای droplet شماست. اگر همراه ما هستید، لطفاً <strong>Ubuntu 22.04 (LTS) x64</strong> را انتخاب کنید.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-08.png" alt="20.01-08.png" />
+</figure>
+
+<p>سپس باید یک plan انتخاب کنید که با مشخصات فنی مورد نیاز شما برای droplet مطابقت داشته باشد. در این مورد plan <strong>Basic Regular</strong> را با قیمت <strong>$4/month</strong> انتخاب خواهیم کرد، که به ما یک ماشین مجازی با 512MB RAM، 10GB فضای دیسک و 500GB <a href="https://www.digitalocean.com/docs/billing/bandwidth/">انتقال داده خروجی</a> در ماه می‌دهد (انتقال داده ورودی محدودیتی ندارد).</p>
+
+<figure class="img">
+<img src="assets/img/20.01-09.png" alt="20.01-09.png" />
+</figure>
+
+<p>گزینه بعدی به ما امکان می‌دهد <a href="https://www.digitalocean.com/products/block-storage/">block storage</a> به droplet اضافه کنیم. این در اصل یک volume ذخیره‌سازی مستقل از droplet است که مانند یک هارد دیسک محلی عمل می‌کند و می‌تواند بین droplet‌های مختلف جابجا شود. این چیزی نیست که الان نیاز داشته باشیم، بنابراین می‌توانید این بخش را رد کنید.</p>
+
+<p>در بخش <strong>Authentication Method</strong>، مطمئن شوید که <strong>SSH keys</strong> به عنوان روش احراز هویت انتخاب شده و کلید SSH که به تازگی آپلود کرده‌اید تیک خورده باشد.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-10.png" alt="20.01-10.png" />
+</figure>
+
+<p>بعد از آن می‌توانیم برخی از ویژگی‌های «افزودنی» را برای droplet خود انتخاب کنیم. در مورد ما <strong>Monitoring</strong> را انتخاب خواهیم کرد، که به شما امکان می‌دهد بعداً نمودارهایی از آمار مختلف droplet (مانند CPU، حافظه و استفاده از دیسک) را در پنل کنترل DigitalOcean خود ببینید &mdash; و همچنین می‌توانید هشدارهایی تنظیم کنید اگر استفاده از منابع از یک آستانه خاص فراتر رود.</p>
+
+<p>همچنین می‌توانید با پرداخت ۲۰٪ هزینه اضافی، <a href="https://www.digitalocean.com/docs/images/backups/">droplet backups</a> خودکار را فعال کنید. اگر این گزینه را انتخاب کنید، DigitalOcean هر هفته یک «اسنپ‌شات» از droplet شما می‌گیرد و آن را به مدت ۴ هفته ذخیره می‌کند. سپس می‌توانید در صورت نیاز، droplet را از طریق پنل کنترل به حالت اسنپ‌شات بازگردانید. فعال کردن backups کاملاً به تصمیم شماست &mdash; اما یک شبکه ایمنی ساده و بدون دردسر است.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-11.png" alt="20.01-11.png" />
+</figure>
+
+<p>سپس به تنظیمات نهایی می‌رسیم.</p>
+
+<p>الان فقط به <strong>یک droplet</strong> نیاز داریم، بنابراین می‌توانید آن را به حالت پیش‌فرض بگذارید.</p>
+
+<p>همچنین باید یک <strong>hostname</strong> برای droplet اضافه کنید. در میان سایر موارد، hostname به عنوان شناسه اصلی droplet در پنل کنترل DigitalOcean استفاده می‌شود و همچنین چیزی است که وقتی بعداً با SSH وارد droplet می‌شوید تا آن را مدیریت کنید خواهید دید. بنابراین باید نامی انتخاب کنید که منطقی و قابل تشخیص باشد. من از hostname <code>greenlight-production</code> استفاده خواهم کرد، اما در صورت تمایل می‌توانید چیز متفاوتی استفاده کنید.</p>
+
+<p>اضافه کردن <a href="https://www.digitalocean.com/docs/droplets/how-to/tag/">tags</a> به droplet شما کاملاً اختیاری است، اما اگر کار زیادی با DigitalOcean انجام می‌دهید، می‌توانند راه مفیدی برای کمک به فیلتر کردن و مدیریت droplet‌ها باشند. من از تگ‌های <code>greenlight</code> و <code>production</code> استفاده خواهم کرد.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-12.png" alt="20.01-12.png" />
+</figure>
+
+<p>وقتی همه چیز تنظیم شد، روی دکمه <strong>Create Droplet</strong> در پایین صفحه کلیک کنید. باید یک نوار پیشرفت ببینید در حالی که droplet برای شما در حال راه‌اندازی است، و پس از یکی دو دقیقه droplet باید فعال و آماده استفاده باشد.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-13.png" alt="20.01-13.png" />
+</figure>
+
+<p>مهم‌ترین چیز در این مرحله توجه به آدرس IP برای droplet است، که در مورد من <code>161.35.71.158</code> است.</p>
+
+<p>در صورت تمایل، می‌توانید روی hostname droplet کلیک کنید تا اطلاعات دقیق‌تری درباره droplet ببینید (شامل آمار monitoring) و هرگونه تغییر پیکربندی و مدیریت دیگری را در صورت نیاز اعمال کنید.</p>
+
+<figure class="img">
+<img src="assets/img/20.01-14.png" alt="20.01-14.png" />
+</figure>
+
+<p>خب، حالا که droplet راه‌اندازی شده، زمان لحظه حقیقت فرا رسیده است!</p>
+
+<p>یک پنجره ترمینال جدید باز کنید و سعی کنید از طریق SSH به عنوان کاربر <code>root</code> با استفاده از آدرس IP droplet متصل شوید. به این صورت&hellip;</p>
+
+<figure class="code bash">
+<pre>$ ssh root@161.35.71.158
+<samp>The authenticity of host '161.35.71.158 (161.35.71.158)' can't be established.
+ED25519 key fingerprint is SHA256:pBVp+W/Sb/BZkQy5JnsGQ0+QOr6clTtB3CFoEOFPKTk.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])?</samp> yes
+<samp>Warning: Permanently added '161.35.71.158' (ED25519) to the list of known hosts.
+Welcome to Ubuntu 22.04.1 LTS (GNU/Linux 5.15.0-50-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Thu Feb 23 15:17:11 UTC 2023
+
+  System load:  0.05615234375     Users logged in:       0
+  Usage of /:   16.8% of 9.51GB   IPv4 address for eth0: 161.35.71.158
+  Memory usage: 43%               IPv4 address for eth0: 10.19.0.5
+  Swap usage:   0%                IPv4 address for eth1: 10.114.0.2
+  Processes:    105
+
+112 updates can be applied immediately.
+66 of these updates are standard security updates.
+To see these additional updates run: apt list --upgradable
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law</samp>
+
+root@greenlight-production:~#</pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> از آنجا که این اولین باری است که از SSH برای اتصال به این droplet استفاده می‌کنید، پیامی دریافت خواهید کرد که می‌گوید «اعتبار host نمی‌تواند تأیید شود». این <a href="https://superuser.com/questions/1295569/does-the-authenticity-of-host-cant-be-established-message-in-ssh-reflect-a-se">در این مورد طبیعی است</a> و فقط <code>yes</code> را تایپ کنید تا ادامه دهید. اگر کلید SSH شما با passphrase محافظت شده باشد، ممکن است از شما خواسته شود آن را هم وارد کنید.
+</p></aside>
+
+<p>عالی به نظر می‌رسد که خوب کار می‌کند. droplet Ubuntu Linux ما فعال و در حال اجراست و ما توانسته‌ایم با موفقیت به عنوان کاربر <code>root</code> از طریق SSH به آن متصل شویم.</p>
+
+<p>می‌توانید <code>exit</code> را تایپ کنید تا اتصال SSH را قطع کرده و به ترمینال ماشین محلی خود برگردید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>root@greenlight-production:~# exit
+<samp>logout
+Connection to 161.35.71.158 closed.</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="20.00-deployment-and-hosting.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="20.02-server-configuration-and-installing-software.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "20.00-deployment-and-hosting.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "20.02-server-configuration-and-installing-software.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

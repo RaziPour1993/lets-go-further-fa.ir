@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>نکات دقیق کدگذاری JSON &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="21.00-appendices.html">پیوست‌ها</a> &rsaquo; نکات دقیق کدگذاری JSON</span>
+						
+					
+				</div>
+				<div>
+					&rsaquo; <a href="21.05-json-decoding-nuances.html">بعدی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="21.03-authentication-with-json-web-tokens.html">قبلی</a> &lsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۲۱.۴.</div>
+			<h2 id="json-encoding-nuances">نکات دقیق کدگذاری JSON</h2>
+
+<h4 id="nil-and-empty-slices-are-encoded-differently">Slie‌های nil و خالی به صورت متفاوت کدگذاری می‌شوند</h4>
+
+<p>Slie‌های nil در Go به مقدار JSON <code>null</code> کدگذاری می‌شوند، در حالی که یک slie خالی (اما نه nil) به آرایه JSON خالی کدگذاری می‌شود. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="kd">var</span> <span class="nx">nilSlice</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span>
+<span class="nx">emptySlice</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="p">}</span>
+
+<span class="nx">m</span> <span class="o">:=</span> <span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+    <span class="s">&#34;nilSlice&#34;</span><span class="p">:</span>   <span class="nx">nilSlice</span><span class="p">,</span>
+    <span class="s">&#34;emptySlice&#34;</span><span class="p">:</span> <span class="nx">emptySlice</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به JSON زیر کدگذاری می‌شود:</p>
+
+<figure class="code plain">
+<pre>{&#34;emptySlice&#34;:[],&#34;nilSlice&#34;:null}</pre>
+</figure>
+
+<aside class="note"><p>
+<strong>نکته:</strong> قبلاً در کتاب به طور خلاصه در مورد این موضوع صحبت کردیم، اما اگر slie شما در یک فیلد struct قرار داشته باشد، استفاده از دستورالعمل struct tag <code>omitzero</code> فقط slie‌های nil را از JSON کدگذاری شده حذف می‌کند، در حالی که <code>omitempty</code> هم slie‌های nil و هم slie‌های خالی را حذف می‌کند.
+</p></aside>
+
+<h4 id="non-ascii-punctuation-characters-aren-t-supported-in-struct-tags">کاراکترهای نگارشی غیر ASCII در struct tag‌ها پشتیبانی نمی‌شوند</h4>
+
+<p>هنگام استفاده از struct tag‌ها برای تغییر کلیدها در یک شیء JSON، هر تگی که حاوی کاراکترهای نگارشی غیر ASCII باشد نادیده گرفته می‌شود. به طور قابل توجهی این بدان معناست که نمی‌توانید از خط فاصله en یا em، یا بیشتر نشانه‌های ارزی در struct tag‌ها استفاده کنید. به عنوان مثال، struct زیر:</p>
+
+<figure class="code go">
+<pre><span class="nx">s</span> <span class="o">:=</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">CostUSD</span> <span class="kt">string</span> <span class="s">`</span><span class="s">json:&#34;cost $&#34;</span><span class="s">`</span> <span class="c1">// This is OK.
+</span><span class="c1"></span>    <span class="nx">CostEUR</span> <span class="kt">string</span> <span class="s">`</span><span class="s">json:&#34;cost €&#34;</span><span class="s">`</span> <span class="c1">// This contains the non-ASCII punctuation character 
+</span><span class="c1"></span>                                   <span class="c1">// € and will be ignored.
+</span><span class="c1"></span><span class="p">}</span><span class="p">{</span>
+    <span class="nx">CostUSD</span><span class="p">:</span> <span class="s">&#34;100.00&#34;</span><span class="p">,</span>
+    <span class="nx">CostEUR</span><span class="p">:</span> <span class="s">&#34;100.00&#34;</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به JSON زیر کدگذاری می‌شود (توجه کنید که struct tag تغییر نام کلید <code>CostEUR</code> نادیده گرفته شده است):</p>
+
+<figure class="code plain">
+<pre>{&#34;cost $&#34;:&#34;100.00&#34;,&#34;CostEUR&#34;:&#34;100.00&#34;}</pre>
+</figure>
+
+<h4 id="integer-time-time-and-net-ip-values-can-be-used-as-map-keys">مقادیر integer، time.Time و net.IP می‌توانند به عنوان کلیدهای map استفاده شوند</h4>
+
+<p>امکان کدگذاری یک map که مقادیر integer به عنوان کلیدهای map دارد وجود دارد. اعداد صحیح به طور خودکار در JSON حاصل به رشته‌ها تبدیل می‌شوند (زیرا کلیدها در یک شیء JSON همیشه باید رشته باشند). به عنوان مثال، map زیر:</p>
+
+<figure class="code go">
+<pre><span class="nx">m</span> <span class="o">:=</span> <span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+    <span class="mi">123</span><span class="p">:</span> <span class="s">&#34;foo&#34;</span><span class="p">,</span>
+    <span class="mi">456</span><span class="nx">_000</span><span class="p">:</span> <span class="s">&#34;bar&#34;</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به JSON زیر کدگذاری می‌شود:</p>
+
+<figure class="code plain">
+<pre>{&#34;123&#34;:&#34;foo&#34;,&#34;456000&#34;:&#34;bar&#34;}</pre>
+</figure>
+
+<p>علاوه بر این، کلیدهای map که interface <a href="https://golang.org/pkg/encoding/#TextMarshaler"><code>encoding.TextMarshaler</code></a> را پیاده‌سازی می‌کنند نیز پشتیبانی می‌شوند. این بدان معناست که می‌توانید مقادیر <code>time.Time</code> و <code>net.IP</code> را نیز به طور پیش‌فرض به عنوان کلیدهای map استفاده کنید. به عنوان مثال، map زیر:</p>
+
+<figure class="code go">
+<pre><span class="nx">t1</span> <span class="o">:=</span> <span class="nx">time</span><span class="p">.</span><span class="nf">Now</span><span class="p">(</span><span class="p">)</span>
+<span class="nx">t2</span> <span class="o">:=</span> <span class="nx">t1</span><span class="p">.</span><span class="nf">Add</span><span class="p">(</span><span class="mi">24</span> <span class="o">*</span> <span class="nx">time</span><span class="p">.</span><span class="nx">Hour</span><span class="p">)</span>
+
+<span class="nx">m</span> <span class="o">:=</span> <span class="kd">map</span><span class="p">[</span><span class="nx">time</span><span class="p">.</span><span class="nx">Time</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+    <span class="nx">t1</span><span class="p">:</span> <span class="s">&#34;foo&#34;</span><span class="p">,</span>
+    <span class="nx">t2</span><span class="p">:</span> <span class="s">&#34;bar&#34;</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به JSON کدگذاری می‌شود که مشابه این است:</p>
+
+<figure class="code plain">
+<pre>{&#34;2009-11-10T23:00:00Z&#34;:&#34;foo&#34;,&#34;2009-11-11T23:00:00Z&#34;:&#34;bar&#34;}</pre>
+</figure>
+
+<h4 id="angle-brackets-and-ampersands-in-strings-are-escaped">زوایا و &amp; در رشته‌ها اسکیپ می‌شوند</h4>
+
+<p>اگر یک رشته حاوی زوایا <code>&lt;</code> یا <code>&gt;</code> باشد، هنگام کدگذاری به JSON به <a href="https://unicode.org/charts/">کدهای کاراکتر یونیکد</a> <code>\u003c</code> و <code>\u003e</code> اسکیپ می‌شوند. به همین ترتیب کاراکتر <code>&amp;</code> به <code>\u0026</code> اسکیپ می‌شود. این برای جلوگیری از تفسیر تصادفی پاسخ JSON به عنوان HTML توسط برخی مرورگرها است. به عنوان مثال، slie زیر:</p>
+
+<figure class="code go">
+<pre><span class="nx">s</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span>
+    <span class="s">&#34;&lt;foo&gt;&#34;</span><span class="p">,</span>
+    <span class="s">&#34;bar &amp; baz&#34;</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به JSON زیر کدگذاری می‌شود:</p>
+
+<figure class="code plain">
+<pre>[&#34;\u003cfoo\u003e&#34;,&#34;bar \u0026 baz&#34;]</pre>
+</figure>
+
+<p>اگر می‌خواهید از اسکیپ شدن این کاراکترها جلوگیری کنید، باید از یک نمونه <code>json.Encoder</code> با <a href="https://golang.org/pkg/encoding/json/#Encoder.SetEscapeHTML"><code>SetEscapeHTML(false)</code></a> برای انجام کدگذاری استفاده کنید.</p>
+
+<h4 id="trailing-zeroes-are-removed-from-floats">صفرهای انتهایی از اعداد اعشاری حذف می‌شوند</h4>
+
+<p>هنگام کدگذاری یک عدد اعشاری با بخش اعشاری که به صفر ختم می‌شود، هر صفر انتهایی در JSON ظاهر نمی‌شود. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="nx">s</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="kt">float64</span><span class="p">{</span>
+    <span class="mf">123.0</span><span class="p">,</span>
+    <span class="mf">456.100</span><span class="p">,</span>
+    <span class="mf">789.990</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به JSON زیر کدگذاری می‌شود:</p>
+
+<figure class="code plain">
+<pre>[123,456.1,789.99]</pre>
+</figure>
+
+<h4 id="working-with-pre-computed-json">کار با JSON از پیش محاسبه شده</h4>
+
+<p>اگر یک رشته یا slie از نوع <code>[]byte</code> دارید که حاوی JSON «از پیش محاسبه شده» یا «از پیش کدگذاری شده» است، به طور پیش‌فرض Go آن را درست مانند هر رشته یا slie دیگری از نوع <code>[]byte</code> در هنگام کدگذاری رفتار می‌کند. این بدان معناست که یک رشته اسکیپ و به عنوان یک رشته JSON کدگذاری می‌شود، و یک slie بایت به عنوان یک رشته JSON base64 کدگذاری می‌شود.
+به عنوان مثال، struct زیر:</p>
+
+<figure class="code go">
+<pre><span class="nx">m</span> <span class="o">:=</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">Person</span> <span class="kt">string</span>
+<span class="p">}</span><span class="p">{</span>
+    <span class="nx">Person</span><span class="p">:</span> <span class="s">`</span><span class="s">{</span><span class="s">&#34;name&#34;: &#34;Alice&#34;, &#34;age&#34;: 21}</span><span class="s">`</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به این صورت کدگذاری می‌شود:</p>
+
+<figure class="code plain">
+<pre>{&#34;Person&#34;:&#34;{\&#34;name\&#34;: \&#34;Alice\&#34;, \&#34;age\&#34;: 21}&#34;}</pre>
+</figure>
+
+<p>اگر می‌خواهید JSON از پیش محاسبه شده را بدون هیچ تغییری جایگزین کنید، باید مقدار JSON از پیش محاسبه شده را به نوع <a href="https://golang.org/pkg/encoding/json/#RawMessage"><code>json.RawMessage</code></a> تبدیل کنید. سپس Go آن را مستقیماً در بقیه JSON جایگزین می‌کند. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="nx">m</span> <span class="o">:=</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">Person</span> <span class="nx">json</span><span class="p">.</span><span class="nx">RawMessage</span>
+<span class="p">}</span><span class="p">{</span>
+    <span class="nx">Person</span><span class="p">:</span> <span class="nx">json</span><span class="p">.</span><span class="nf">RawMessage</span><span class="p">(</span><span class="s">`</span><span class="s">{</span><span class="s">&#34;name&#34;: &#34;Alice&#34;, &#34;age&#34;: 21}</span><span class="s">`</span><span class="p">)</span><span class="p">,</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>به JSON زیر کدگذاری می‌شود:</p>
+
+<figure class="code plain">
+<pre>{&#34;Person&#34;:{&#34;name&#34;:&#34;Alice&#34;,&#34;age&#34;:21}}</pre>
+</figure>
+
+<aside class="important"><p>
+<strong>مهم</strong>: هنگام استفاده از <code>json.RawMessage</code> دقت کنید که مقدار از پیش محاسبه شده حاوی JSON معتبر باشد، در غیر این صورت هنگام تلاش برای کدگذاری شیء والد با خطا مواجه خواهید شد. اگر نیاز دارید این را در زمان اجرا بررسی کنید، می‌توانید از تابع <a href="https://golang.org/pkg/encoding/json/#Valid"><code>json.Valid()</code></a> استفاده کنید.
+</p></aside>
+
+<h4 id="the-marshaltext-fallback">جایگزین MarshalText</h4>
+
+<p>اگر یک نوع متد <code>MarshalJSON()</code> <em>ندارد</em> اما در عوض متد <code>MarshalText()</code> <em>دارد</em> (به طوری که interface <a href="https://golang.org/pkg/encoding/#TextMarshaler"><code>encoding.TextMarshaler</code></a> را پیاده‌سازی کند)، Go در هنگام کدگذاری JSON به این روش بازمی‌گردد و نتیجه را به عنوان یک رشته JSON ارائه می‌دهد.</p>
+
+<p>به عنوان مثال، اگر <a href="https://play.golang.org/p/wtHwCWpmKCj">کد زیر را اجرا کنید</a>:</p>
+
+<figure class="code go">
+<pre><span class="kd">type</span> <span class="nx">myFloat</span> <span class="kt">float64</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">f</span> <span class="nx">myFloat</span><span class="p">)</span> <span class="nf">MarshalText</span><span class="p">(</span><span class="p">)</span> <span class="p">(</span><span class="p">[</span><span class="p">]</span><span class="kt">byte</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">[</span><span class="p">]</span><span class="nb">byte</span><span class="p">(</span><span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">&#34;%.2f&#34;</span><span class="p">,</span> <span class="nx">f</span><span class="p">)</span><span class="p">)</span><span class="p">,</span> <span class="kc">nil</span>    
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nf">main</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">f</span> <span class="o">:=</span> <span class="nf">myFloat</span><span class="p">(</span><span class="mf">1.0</span><span class="o">/</span><span class="mf">3.0</span><span class="p">)</span>
+    
+    <span class="nx">js</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">json</span><span class="p">.</span><span class="nf">Marshal</span><span class="p">(</span><span class="nx">f</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">log</span><span class="p">.</span><span class="nf">Fatal</span><span class="p">(</span><span class="nx">err</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Printf</span><span class="p">(</span><span class="s">&#34;%s&#34;</span><span class="p">,</span> <span class="nx">js</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>مقدار بازگشتی از <code>MarshalText()</code> را به عنوان یک رشته JSON چاپ می‌کند:</p>
+
+<figure class="code plain">
+<pre>&#34;0.33&#34;</pre>
+</figure>
+
+<h4 id="the-receiver-matters-when-using-marshaljson">گیرنده هنگام استفاده از MarshalJSON اهمیت دارد</h4>
+
+<p>قبلاً در کتاب به این موضوع اشاره کردیم، اما واقعاً ارزش تأکید دارد زیرا اغلب افراد را گمراه می‌کند. اگر متد <code>MarshalJSON()</code> را روی یک نوع سفارشی پیاده‌سازی کنید و متد <code>MarshalJSON()</code> از یک گیرنده اشاره‌گر استفاده کند، <em>فقط هنگام کدگذاری یک اشاره‌گر به نوع سفارشی استفاده می‌شود</em>. برای هر مقدار <em>نوع سفارشی</em>، کاملاً نادیده گرفته می‌شود.</p>
+
+<p>می‌توانید این را در عمل ببینید اگر <a href="https://play.golang.org/p/8ek3-nb8LaN">این کد را در Go playground اجرا کنید</a>.</p>
+
+<p>مگر اینکه به طور خاص این رفتار را بخواهید، توصیه می‌کنم عادت کنید که همیشه از گیرنده‌های مقداری برای متد <code>MarshalJSON()</code> استفاده کنید، درست مانند آنچه در این کتاب داشته‌ایم.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&rsaquo; <a href="21.05-json-decoding-nuances.html">بعدی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="21.03-authentication-with-json-web-tokens.html">قبلی</a> &lsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "21.03-authentication-with-json-web-tokens.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "21.05-json-decoding-nuances.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
