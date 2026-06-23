@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>اعتبارسنجی پارامترهای رشته کوئری &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="09.00-filtering-sorting-and-pagination.html">فیلتر کردن، مرتب‌سازی و صفحه‌بندی</a> &rsaquo; اعتبارسنجی پارامترهای رشته کوئری</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="09.01-parsing-query-string-parameters.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="09.03-listing-data.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۹.۲.</div>
+			<h2 id="validating-query-string-parameters">اعتبارسنجی پارامترهای رشته کوئری</h2>
+
+<p>به لطف تابع کمکی <code>readInt()</code> که در فصل قبل ایجاد کردیم، API ما در حال حاضر باید خطاهای اعتبارسنجی را اگر پارامترهای رشته کوئری <code>page</code> و <code>page_size</code> شامل مقادیر عدد صحیح نباشند، برگرداند. اگر مایلید آن را امتحان کنید:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?page=abc&amp;page_size=abc&#34;
+<samp>{
+    &#34;error&#34;: {
+        &#34;page&#34;: &#34;must be an integer value&#34;,
+        &#34;page_size&#34;: &#34;must be an integer value&#34;
+    }
+}</samp></pre>
+</figure>
+
+<p>اما هنوز باید برخی بررسی‌های اضافی انجام دهیم تا مطمئن شویم مقادیر رشته کوئری که توسط کلاینت ارائه شده‌اند، منطقی هستند. به طور خاص، می‌خواهیم بررسی کنیم که:</p>
+
+<ul>
+<li>مقدار <code>page</code> بین ۱ و ۱۰,۰۰۰,۰۰۰ باشد.</li>
+<li>مقدار <code>page_size</code> بین ۱ و ۱۰۰ باشد.</li>
+<li>پارامتر <code>sort</code> شامل یک مقدار شناخته‌شده و پشتیبانی‌شده برای جدول فیلم‌های ما باشد. به طور خاص، مقادیر <code>&quot;id&quot;</code>، <code>&quot;title&quot;</code>، <code>&quot;year&quot;</code>، <code>&quot;runtime&quot;</code>، <code>&quot;-id&quot;</code>، <code>&quot;-title&quot;</code>، <code>&quot;-year&quot;</code> یا <code>&quot;-runtime&quot;</code> مجاز خواهند بود.</li>
+</ul>
+
+<p>برای رفع این مشکل، بیایید فایل <code>internal/data/filters.go</code> را باز کرده و یک تابع جدید <code>ValidateFilters()</code> ایجاد کنیم که این بررسی‌ها را روی مقادیر انجام می‌دهد.</p>
+
+<p>ما از همان الگویی که برای تابع <code>ValidateMovie()</code> در ابتدای کار استفاده کردیم، پیروی خواهیم کرد، به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/filters.go</figcaption>
+<pre>
+<span class="kn">package</span> <span class="nx">data</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span><span class="p">)</span>
+
+<span class="c1">// Add a SortSafelist field to hold the supported sort values.
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">Filters</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">Page</span>         <span class="kt">int</span>
+    <span class="nx">PageSize</span>     <span class="kt">int</span>
+    <span class="nx">Sort</span>         <span class="kt">string</span>
+    <span class="nx">SortSafelist</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="nf">ValidateFilters</span><span class="p">(</span><span class="nx">v</span> <span class="o">*</span><span class="nx">validator</span><span class="p">.</span><span class="nx">Validator</span><span class="p">,</span> <span class="nx">f</span> <span class="nx">Filters</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Check that the page and page_size parameters contain sensible values.
+</span><span class="c1"></span>    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">f</span><span class="p">.</span><span class="nx">Page</span> <span class="p">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;page&#34;</span><span class="p">,</span> <span class="s">&#34;must be greater than zero&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">f</span><span class="p">.</span><span class="nx">Page</span> <span class="o">&lt;=</span> <span class="mi">10</span><span class="nx">_000_000</span><span class="p">,</span> <span class="s">&#34;page&#34;</span><span class="p">,</span> <span class="s">&#34;must be a maximum of 10 million&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">f</span><span class="p">.</span><span class="nx">PageSize</span> <span class="p">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s">&#34;page_size&#34;</span><span class="p">,</span> <span class="s">&#34;must be greater than zero&#34;</span><span class="p">)</span>
+    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">f</span><span class="p">.</span><span class="nx">PageSize</span> <span class="o">&lt;=</span> <span class="mi">100</span><span class="p">,</span> <span class="s">&#34;page_size&#34;</span><span class="p">,</span> <span class="s">&#34;must be a maximum of 100&#34;</span><span class="p">)</span>
+
+    <span class="c1">// Check that the sort parameter matches a value in the safelist.
+</span><span class="c1"></span>    <span class="nx">v</span><span class="p">.</span><span class="nf">Check</span><span class="p">(</span><span class="nx">validator</span><span class="p">.</span><span class="nf">PermittedValue</span><span class="p">(</span><span class="nx">f</span><span class="p">.</span><span class="nx">Sort</span><span class="p">,</span> <span class="nx">f</span><span class="p">.</span><span class="nx">SortSafelist</span><span class="o">...</span><span class="p">)</span><span class="p">,</span> <span class="s">&#34;sort&#34;</span><span class="p">,</span> <span class="s">&#34;invalid sort value&#34;</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>سپس باید <code>listMoviesHandler</code> خود را به روز کنیم تا مقادیر پشتیبانی‌شده را در فیلد <code>SortSafelist</code> تنظیم کند و سپس این تابع جدید <code>ValidateFilters()</code> را فراخوانی کنیم.</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">listMoviesHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>  <span class="kt">string</span>
+        <span class="nx">Genres</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span>
+        <span class="nx">data</span><span class="p">.</span><span class="nx">Filters</span>
+    <span class="p">}</span>
+
+    <span class="nx">v</span> <span class="o">:=</span> <span class="nx">validator</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">qs</span> <span class="o">:=</span> <span class="nx">r</span><span class="p">.</span><span class="nx">URL</span><span class="p">.</span><span class="nf">Query</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Title</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readString</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;&#34;</span><span class="p">)</span>
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readCSV</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="p">}</span><span class="p">)</span>
+
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">Page</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readInt</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;page&#34;</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="nx">v</span><span class="p">)</span>
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">PageSize</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readInt</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;page_size&#34;</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="nx">v</span><span class="p">)</span>
+
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">Sort</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readString</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;sort&#34;</span><span class="p">,</span> <span class="s">&#34;id&#34;</span><span class="p">)</span>
+    <span class="c1">// Add the supported sort values for this endpoint to the sort safelist.
+</span><span class="c1"></span>    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">SortSafelist</span> <span class="p">=</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="s">&#34;id&#34;</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;runtime&#34;</span><span class="p">,</span> <span class="s">&#34;-id&#34;</span><span class="p">,</span> <span class="s">&#34;-title&#34;</span><span class="p">,</span> <span class="s">&#34;-year&#34;</span><span class="p">,</span> <span class="s">&#34;-runtime&#34;</span><span class="p">}</span>
+
+    <span class="c1">// Execute the validation checks on the Filters struct and send a response 
+</span><span class="c1"></span>    <span class="c1">// containing the errors if necessary.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nf">ValidateFilters</span><span class="p">(</span><span class="nx">v</span><span class="p">,</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">)</span><span class="p">;</span> <span class="p">!</span><span class="nx">v</span><span class="p">.</span><span class="nf">Valid</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">failedValidationResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">fmt</span><span class="p">.</span><span class="nf">Fprintf</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="s">&#34;%+v\n&#34;</span><span class="p">,</span> <span class="nx">input</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>اگر API را مجدداً راه‌اندازی کنید و درخواستی با پارامترهای نامعتبر <code>page</code>، <code>page_size</code> و <code>sort</code> ارسال کنید، اکنون باید پاسخ خطا حاوی پیام‌های عدم اعتبار مربوطه دریافت کنید. مانند زیر:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?page=-1&amp;page_size=-1&amp;sort=foo&#34;
+<samp>{
+    &#34;error&#34;: {
+        &#34;page&#34;: &#34;must be greater than zero&#34;,
+        &#34;page_size&#34;: &#34;must be greater than zero&#34;,
+        &#34;sort&#34;: &#34;invalid sort value&#34;
+    }
+}</samp></pre>
+</figure>
+
+<p>اگر مایلید، می‌توانید آزمایش را بیشتر انجام دهید و مقادیر مختلف رشته کوئری را تا زمانی که مطمئن شوید بررسی‌های اعتبارسنجی همگی به درستی کار می‌کنند، امتحان کنید.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="09.01-parsing-query-string-parameters.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="09.03-listing-data.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "09.01-parsing-query-string-parameters.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "09.03-listing-data.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

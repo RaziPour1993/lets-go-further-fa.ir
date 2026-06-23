@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>صفحه‌بندی لیست‌ها &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="09.00-filtering-sorting-and-pagination.html">فیلتر کردن، مرتب‌سازی و صفحه‌بندی</a> &rsaquo; صفحه‌بندی لیست‌ها</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="09.06.sorting-lists.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="09.08.returning-pagination-metadata.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۹.۷.</div>
+			<h2 id="paginating-lists">صفحه‌بندی لیست‌ها</h2>
+
+<p>اگر endpointای دارید که لیستی با صدها یا هزاران رکورد برمی‌گرداند، ممکن است به دلایل عملکرد یا قابلیت استفاده، بخواهید نوعی <em>صفحه‌بندی</em> را در endpoint پیاده‌سازی کنید &mdash; به طوری که در هر پاسخ HTTP فقط زیرمجموعه‌ای از رکوردها برگردانده شود.</p>
+
+<p>برای نمایش نحوه انجام این کار، در این فصل endpoint <code>GET /v1/movies</code> را به‌روزرسانی می‌کنیم تا از مفهوم &lsquo;صفحات&rsquo; پشتیبانی کند و client بتواند با استفاده از پارامترهای query string ما به نام‌های <code>page</code> و <code>page_size</code>، &lsquo;صفحه&rsquo; خاصی از لیست فیلم‌ها را درخواست کند. به عنوان مثال:</p>
+
+<figure class="code go">
+<pre><span class="c1">// Return the 5 records on page 1 (records 1-5 in the dataset)
+</span><span class="c1"></span><span class="o">/</span><span class="nx">v1</span><span class="o">/</span><span class="nx">movies</span><span class="err">?</span><span class="nx">page</span><span class="p">=</span><span class="mi">1</span><span class="o">&amp;</span><span class="nx">page_size</span><span class="p">=</span><span class="mi">5</span>
+
+<span class="c1">// Return the next 5 records on page 2 (records 6-10 in the dataset)
+</span><span class="c1"></span><span class="o">/</span><span class="nx">v1</span><span class="o">/</span><span class="nx">movies</span><span class="err">?</span><span class="nx">page</span><span class="p">=</span><span class="mi">2</span><span class="o">&amp;</span><span class="nx">page_size</span><span class="p">=</span><span class="mi">5</span>
+
+<span class="c1">// Return the next 5 records on page 3 (records 11-15 in the dataset)
+</span><span class="c1"></span><span class="o">/</span><span class="nx">v1</span><span class="o">/</span><span class="nx">movies</span><span class="err">?</span><span class="nx">page</span><span class="p">=</span><span class="mi">3</span><span class="o">&amp;</span><span class="nx">page_size</span><span class="p">=</span><span class="mi">5</span></pre>
+</figure>
+
+<p>به طور کلی، تغییر پارامتر <code>page_size</code> تعداد فیلم‌های نمایش داده شده در هر &lsquo;صفحه&rsquo; را تغییر می‌دهد و افزایش پارامتر <code>page</code> به مقدار یک، &lsquo;صفحه&rsquo; بعدی فیلم‌ها در لیست را نمایش می‌دهد.</p>
+
+<h3 id="the-limit-and-offset-clauses">عبارت‌های LIMIT و OFFSET</h3>
+
+<p>در پشت صحنه، ساده‌ترین راه برای پشتیبانی از این سبک صفحه‌بندی، اضافه کردن عبارت‌های <a href="https://www.postgresql.org/docs/current/queries-limit.html"><code>LIMIT</code></a> و <a href="https://www.postgresql.org/docs/current/queries-limit.html"><code>OFFSET</code></a> به query SQL ما است.</p>
+
+<p>عبارت <code>LIMIT</code> به شما اجازه می‌دهد حداکثر تعداد رکوردهایی که یک query SQL باید برگرداند را تنظیم کنید و <code>OFFSET</code> به شما اجازه می‌دهد تعداد مشخصی از ردیف‌ها را قبل از شروع برگرداندن رکوردها از query &lsquo;رد کنید&rsquo;.</p>
+
+<p>در برنامه ما، فقط کافی است مقادیر <code>page</code> و <code>page_size</code> ارائه شده توسط client را به مقادیر <code>LIMIT</code> و <code>OFFSET</code> مناسب برای query SQL خود تبدیل کنیم. محاسبات بسیار ساده است:</p>
+
+<figure class="code plain">
+<pre>LIMIT = page_size
+OFFSET = (page - 1) * page_size</pre>
+</figure>
+
+<p>یا برای مثال مشخص، اگر client درخواست زیر را ارسال کند:</p>
+
+<figure class="code plain">
+<pre>/v1/movies?page_size=5&amp;page=3</pre>
+</figure>
+
+<p>باید این را به query SQL زیر &lsquo;ترجمه&rsquo; کنیم:</p>
+
+<figure class="code plain">
+<pre>SELECT id, created_at, title, year, runtime, genres, version
+FROM movies
+WHERE (to_tsvector(&#39;simple&#39;, title) @@ plainto_tsquery(&#39;simple&#39;, $1) OR $1 = &#39;&#39;) 
+AND (genres @&gt; $2 OR $2 = &#39;{}&#39;)     
+ORDER BY %s %s, id ASC
+LIMIT 5 OFFSET 10</pre>
+</figure>
+
+<p>بیایید با اضافه کردن چند متد کمکی به ساختار <code>Filters</code> خود برای محاسبه مقادیر <code>LIMIT</code> و <code>OFFSET</code> مناسب شروع کنیم.</p>
+
+<p>اگر در حال دنبال کردن هستید، فایل <code>internal/data/filters.go</code> را به این صورت به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/filters.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="kd">type</span> <span class="nx">Filters</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">Page</span>         <span class="kt">int</span>
+    <span class="nx">PageSize</span>     <span class="kt">int</span>
+    <span class="nx">Sort</span>         <span class="kt">string</span>
+    <span class="nx">SortSafelist</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span>
+<span class="p">}</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">f</span> <span class="nx">Filters</span><span class="p">)</span> <span class="nf">limit</span><span class="p">(</span><span class="p">)</span> <span class="kt">int</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nx">f</span><span class="p">.</span><span class="nx">PageSize</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">f</span> <span class="nx">Filters</span><span class="p">)</span> <span class="nf">offset</span><span class="p">(</span><span class="p">)</span> <span class="kt">int</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="p">(</span><span class="nx">f</span><span class="p">.</span><span class="nx">Page</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="nx">f</span><span class="p">.</span><span class="nx">PageSize</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> متد <code>offset()</code> شامل ضرب دو مقدار <code>int</code> است که به طور تئوری می‌تواند باعث <a href="https://golang.org/ref/spec#Integer_overflow">overflow عدد صحیح</a> شود. با این حال، این خطر توسط قوانین اعتبارسنجی که در <code>ValidateFilters()</code> ایجاد کرده‌ایم کاهش یافته است، جایی که <code>page_size</code> را روی <code>100</code> و <code>page</code> را روی <code>10,000,000</code> محدود کرده‌ایم. در نتیجه، حداکثر مقدار ممکن برگردانده شده توسط <code>offset()</code> برابر <code>990,000,000</code> است که همچنان به خوبی زیر <a href="https://pkg.go.dev/math#pkg-constants"><code>math.MaxInt</code></a>، آستانه overflow، باقی می‌ماند.
+</p></aside>
+
+<h3 id="updating-the-database-model">به‌روزرسانی مدل پایگاه داده</h3>
+
+<p>به عنوان مرحله نهایی در این فرآیند، باید متد <code>GetAll()</code> مدل پایگاه داده خود را به‌روزرسانی کنیم تا عبارت‌های <code>LIMIT</code> و <code>OFFSET</code> مناسب به query SQL اضافه شوند.</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">GetAll</span><span class="p">(</span><span class="nx">title</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">genres</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">,</span> <span class="nx">filters</span> <span class="nx">Filters</span><span class="p">)</span> <span class="p">(</span><span class="p">[</span><span class="p">]</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Update the SQL query to include the LIMIT and OFFSET clauses with placeholder
+</span><span class="c1"></span>    <span class="c1">// parameter values.
+</span><span class="c1"></span>    <span class="nx">query</span> <span class="o">:=</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">`</span><span class="s">
+</span><span class="s">        SELECT id, created_at, title, year, runtime, genres, version
+</span><span class="s">        FROM movies
+</span><span class="s">        WHERE (to_tsvector(&#39;simple&#39;, title) @@ plainto_tsquery(&#39;simple&#39;, $1) OR $1 = &#39;&#39;) 
+</span><span class="s">        AND (genres @&gt; $2 OR $2 = &#39;</span><span class="s">{</span><span class="s">}&#39;)     
+</span><span class="s">        ORDER BY %s %s, id ASC
+</span><span class="s">        LIMIT $3 OFFSET $4</span><span class="s">`</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">sortColumn</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">sortDirection</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">3</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// As our SQL query now has quite a few placeholder parameters, let&#39;s collect the
+</span><span class="c1"></span>    <span class="c1">// values for the placeholders in a slice. Notice here how we call the limit() and
+</span><span class="c1"></span>    <span class="c1">// offset() methods on the Filters struct to get the appropriate values for the
+</span><span class="c1"></span>    <span class="c1">// LIMIT and OFFSET clauses.
+</span><span class="c1"></span>    <span class="nx">args</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="nx">any</span><span class="p">{</span><span class="nx">title</span><span class="p">,</span> <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="nx">genres</span><span class="p">)</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">limit</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">offset</span><span class="p">(</span><span class="p">)</span><span class="p">}</span>
+
+    <span class="c1">// And then pass the args slice to QueryContext() as a variadic parameter.
+</span><span class="c1"></span>    <span class="nx">rows</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">args</span><span class="o">...</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+    <span class="p">}</span>
+
+    <span class="c1">// The remaining code doesn&#39;t need to change.
+</span><span class="c1"></span>    <span class="o">...</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>پس از اتمام این کار، باید آماده آزمایش باشیم.</p>
+
+<p>سرور را مجدداً راه‌اندازی کنید و سپس درخواست زیر را با پارامتر <code>page_size=2</code> ارسال کنید:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?page_size=2&#34;
+<samp>{
+    &#34;movies&#34;: [
+        {
+            &#34;id&#34;: 1,
+            &#34;title&#34;: &#34;Moana&#34;,
+            &#34;year&#34;: 2016,
+            &#34;runtime&#34;: &#34;107 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;animation&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 1
+        },
+        {
+            &#34;id&#34;: 2,
+            &#34;title&#34;: &#34;Black Panther&#34;,
+            &#34;year&#34;: 2018,
+            &#34;runtime&#34;: &#34;134 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;sci-fi&#34;,
+                &#34;action&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 2
+        }
+    ]
+}</samp></pre>
+</figure>
+
+<p>این خوب به نظر می‌رسد. اکنون endpoint ما فقط دو رکورد اول فیلم را از پایگاه داده ما برمی‌گرداند (با استفاده از ترتیب پیش‌فرض مرتب‌سازی صعودی شناسه فیلم).</p>
+
+<p>سپس، درخواست صفحه دوم نتایج را امتحان کنید. اگر در حال دنبال کردن بوده‌اید، این صفحه باید شامل یک رکورد باقی‌مانده در سیستم ما باشد، به این صورت:</p>
+
+<figure class="code bash">
+<pre><samp># مهم: این URL باید با علامت نقل قول دوگانه احاطه شود تا به درستی کار کند.</samp>
+$ curl &#34;localhost:4000/v1/movies?page_size=2&amp;page=2&#34;
+<samp>{
+    &#34;movies&#34;: [
+        {
+            &#34;id&#34;: 4,
+            &#34;title&#34;: &#34;The Breakfast Club&#34;,
+            &#34;year&#34;: 1985,
+            &#34;runtime&#34;: &#34;97 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;comedy&#34;
+            ],
+            &#34;version&#34;: 5
+        }
+    ]
+}</samp></pre>
+</figure>
+
+<p>اگر سعی کنید صفحه سوم را درخواست کنید، باید آرایه JSON خالی در پاسخ دریافت کنید به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?page_size=2&amp;page=3&#34;
+<samp>{
+    &#34;movies&#34;: []
+}</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="09.06.sorting-lists.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="09.08.returning-pagination-metadata.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "09.06.sorting-lists.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "09.08.returning-pagination-metadata.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

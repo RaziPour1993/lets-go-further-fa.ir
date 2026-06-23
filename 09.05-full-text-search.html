@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>جستجوی تمام متن &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="09.00-filtering-sorting-and-pagination.html">فیلتر کردن، مرتب سازی و صفحه بندی</a> &rsaquo; جستجوی تمام متن</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="09.04-filtering-lists.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="09.06.sorting-lists.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۹.۵.</div>
+			<h2 id="full-text-search">جستجوی تمام متن</h2>
+
+<p>در این فصل، ما فیلتر عنوان فیلم خود را با پشتیبانی از تطابق جزئی به جای تطابق کامل، کاربرپسندتر خواهیم کرد. به عنوان مثال، اگر یک مشتری بخواهد فیلم The Breakfast Club را پیدا کند، می‌تواند فقط با رشته پرس و جوی <code>title=breakfast</code> آن را پیدا کند.</p>
+
+<p>روش‌های مختلفی برای پیاده‌سازی این ویژگی در کد ما وجود دارد، اما یک روش مؤثر و شهودی (از دیدگاه مشتری) استفاده از قابلیت <em>full-text search</em> PostgreSQL است که به شما امکان می‌دهد جستجوهای زبان طبیعی را روی فیلدهای متنی پایگاه داده خود انجام دهید.</p>
+
+<p>جستجوی تمام متن PostgreSQL یک ابزار قدرتمند و بسیار قابل تنظیم است و توضیح نحوه عملکرد آن و گزینه‌های موجود به طور کامل به راحتی می‌تواند یک کتاب کامل را پر کند. بنابراین توضیحات این فصل را در سطح بالا نگه می‌داریم و بر پیاده‌سازی عملی تمرکز خواهیم کرد.</p>
+
+<p>برای پیاده‌سازی یک جستجوی تمام متن پایه روی فیلد <code>title</code> خود، کوئری SQL خود را به شکل زیر به روز می‌کنیم:</p>
+
+<figure class="code plain">
+<pre>SELECT id, created_at, title, year, runtime, genres, version
+FROM movies
+WHERE (to_tsvector(&#39;simple&#39;, title) @@ plainto_tsquery(&#39;simple&#39;, $1) OR $1 = &#39;&#39;) 
+AND (genres @&gt; $2 OR $2 = &#39;{}&#39;)     
+ORDER BY id</pre>
+</figure>
+
+<p>این در نگاه اول کمی پیچیده به نظر می‌رسد، بنابراین بیایید آن را تجزیه کرده و توضیح دهیم که چه اتفاقی می‌افتد.</p>
+
+<p>تابع <code>to_tsvector('simple', title)</code> عنوان یک فیلم را گرفته و آن را به <em>lexeme</em>‌ها (واژه‌های پایه) تقسیم می‌کند. ما پیکربندی <code>simple</code> را مشخص می‌کنیم، به این معنی که lexeme‌ها فقط نسخه‌های حروف کوچک کلمات در عنوان هستند<sup>†</sup>. به عنوان مثال، عنوان فیلم <code>&quot;The Breakfast Club&quot;</code> به lexeme‌های <code>'breakfast' 'club' 'the'</code> تقسیم می‌شود.</p>
+
+<aside class="hint"><p>
+† پیکربندهای «غیر ساده» دیگر ممکن است قوانین اضافی را روی lexeme‌ها اعمال کنند، مانند حذف کلمات رایج یا اعمال ریشه‌یابی (stemming) خاص زبان.
+</p></aside>
+
+<p>تابع <code>plainto_tsquery('simple', $1)</code> مقدار جستجو را گرفته و آن را به یک <em>query term</em> قالب‌بندی شده تبدیل می‌کند که جستجوی تمام متن PostgreSQL می‌تواند آن را درک کند. این مقدار جستجو را عادی‌سازی می‌کند (دوباره با استفاده از پیکربندی <code>simple</code>)، کاراکترهای خاص را حذف می‌کند و عملگر <em>and</em> <code>&amp;</code> را بین کلمات درج می‌کند. به عنوان مثال، مقدار جستجوی <code>&quot;The Club&quot;</code> منجر به query term <code>'the' &amp; 'club'</code> می‌شود.</p>
+
+<p>عملگر <code>@@</code> عملگر تطابق (matches) است. در دستور ما از آن برای بررسی اینکه آیا <em>query term تولید شده با lexeme‌های عنوان مطابقت دارد</em> یا خیر استفاده می‌کنیم. برای ادامه مثال، query term <code>'the' &amp; 'club'</code> با ردیف‌هایی که <em>هر دو</em> lexeme <code>'the'</code> و <code>'club'</code> را دارند مطابقت می‌کند.</p>
+
+<p>کلمات تخصصی زیادی در پاراگراف‌های بالا وجود دارد، اما اگر آن را با چند مثال نشان دهیم، در واقع بسیار شهودی است:</p>
+
+<figure class="code js">
+<pre><span class="c1">// Return all movies where the title includes the case-insensitive word &#39;panther&#39;.
+</span><span class="c1"></span><span class="err">/</span><span class="err">v</span><span class="err">1</span><span class="err">/</span><span class="err">m</span><span class="err">o</span><span class="err">v</span><span class="err">i</span><span class="err">e</span><span class="err">s</span><span class="err">?</span><span class="err">t</span><span class="err">i</span><span class="err">t</span><span class="err">l</span><span class="err">e</span><span class="err">=</span><span class="err">p</span><span class="err">a</span><span class="err">n</span><span class="err">t</span><span class="err">h</span><span class="err">e</span><span class="err">r</span>
+
+<span class="c1">// Return all movies where the title includes the case-insensitive words &#39;the&#39; and 
+</span><span class="c1"></span><span class="c1">// &#39;club&#39;.
+</span><span class="c1"></span><span class="err">/</span><span class="err">v</span><span class="err">1</span><span class="err">/</span><span class="err">m</span><span class="err">o</span><span class="err">v</span><span class="err">i</span><span class="err">e</span><span class="err">s</span><span class="err">?</span><span class="err">t</span><span class="err">i</span><span class="err">t</span><span class="err">l</span><span class="err">e</span><span class="err">=</span><span class="err">t</span><span class="err">h</span><span class="err">e</span><span class="err">+</span><span class="err">c</span><span class="err">l</span><span class="err">u</span><span class="err">b</span></pre>
+</figure>
+
+<p>بیایید این را اجرا کنیم. فایل <code>internal/data/movies.go</code> خود را باز کنید و متد <code>GetAll()</code> را به روز کنید تا از کوئری SQL جدید مانند زیر استفاده کند:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">GetAll</span><span class="p">(</span><span class="nx">title</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">genres</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">,</span> <span class="nx">filters</span> <span class="nx">Filters</span><span class="p">)</span> <span class="p">(</span><span class="p">[</span><span class="p">]</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Use full-text search for the title filter.
+</span><span class="c1"></span>    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        SELECT id, created_at, title, year, runtime, genres, version
+</span><span class="s">        FROM movies
+</span><span class="s">        WHERE (to_tsvector(&#39;simple&#39;, title) @@ plainto_tsquery(&#39;simple&#39;, $1) OR $1 = &#39;&#39;) 
+</span><span class="s">        AND (genres @&gt; $2 OR $2 = &#39;</span><span class="s">{</span><span class="s">}&#39;)     
+</span><span class="s">        ORDER BY id</span><span class="s">`</span>
+
+    <span class="c1">// Nothing else below needs to change.
+</span><span class="c1"></span>    <span class="o">...</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>اگر در حال دنبال کردن هستید، برنامه را مجدداً راه اندازی کنید و سعی کنید با مقادیر مختلف برای عنوان فیلم درخواست‌هایی ارسال کنید. باید متوجه شوید که جستجوهای جزئی اکنون مطابق آنچه در بالا توضیح دادیم کار می‌کنند.</p>
+
+<p>به عنوان مثال:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?title=panther&#34;
+<samp>{
+    &#34;movies&#34;: [
+        {
+            &#34;id&#34;: 2,
+            &#34;title&#34;: &#34;Black Panther&#34;,
+            &#34;year&#34;: 2018,
+            &#34;runtime&#34;: &#34;134 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;sci-fi&#34;,
+                &#34;action&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 2
+        }
+    ]
+}</samp>
+
+$ curl &#34;localhost:4000/v1/movies?title=the+club&#34;
+<samp>{
+    &#34;movies&#34;: [
+        {
+            &#34;id&#34;: 4,
+            &#34;title&#34;: &#34;The Breakfast Club&#34;,
+            &#34;year&#34;: 1985,
+            &#34;runtime&#34;: &#34;97 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;comedy&#34;
+            ],
+            &#34;version&#34;: 5
+        }
+    ]
+}</samp></pre>
+</figure>
+
+<h3 id="adding-indexes">افزودن ایندکس‌ها</h3>
+
+<p>برای اینکه کوئری SQL ما با رشد مجموعه داده‌ها به سرعت اجرا شود، منطقی است از ایندکس‌ها برای کمک به جلوگیری از اسکن کامل جدول و جلوگیری از تولید lexeme‌ها برای فیلد <code>title</code> در هر بار اجرای کوئری استفاده کنیم.</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر با مفهوم ایندکس‌ها در پایگاه‌های داده SQL آشنا نیستید، مستندات رسمی PostgreSQL یک <a href="https://www.postgresql.org/docs/current/indexes-intro.html">معرفی خوب</a> و خلاصه‌ای از <a href="https://www.postgresql.org/docs/current/indexes-types.html">انواع ایندکس</a> ارائه می‌دهد. من پیشنهاد می‌کنم اینها را به سرعت بخوانید تا قبل از ادامه یک مرور کلی داشته باشید.
+</p></aside>
+
+<p>در مورد ما، ایجاد <a href="https://www.postgresql.org/docs/current/textsearch-indexes.html">ایندکس‌های GIN</a> هم روی فیلد <code>genres</code> و هم روی lexeme‌های تولید شده توسط <code>to_tsvector()</code> منطقی است، که هر دو در کلاUSE WHERE کوئری SQL ما استفاده می‌شوند.</p>
+
+<p>اگر در حال دنبال کردن هستید، یک جفت فایل migration جدید ایجاد کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate create -seq -ext .sql -dir ./migrations add_movies_indexes</pre>
+</figure>
+
+<p>سپس دستورات زیر را به فایل‌های migration 'up' و 'down' اضافه کنید تا ایندکس‌های لازم ایجاد و حذف شوند:</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000003_add_movies_indexes.up.sql</figcaption>
+<pre><span class="k">CREATE</span> <span class="k">INDEX</span> <span class="k">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">movies_title_idx</span> <span class="k">ON</span> <span class="n">movies</span> <span class="k">USING</span> <span class="n">GIN</span> <span class="p">(</span><span class="n">to_tsvector</span><span class="p">(</span><span class="s1">&#39;</span><span class="s1">simple</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">title</span><span class="p">)</span><span class="p">)</span><span class="p">;</span>
+<span class="k">CREATE</span> <span class="k">INDEX</span> <span class="k">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">movies_genres_idx</span> <span class="k">ON</span> <span class="n">movies</span> <span class="k">USING</span> <span class="n">GIN</span> <span class="p">(</span><span class="n">genres</span><span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000003_add_movies_indexes.down.sql</figcaption>
+<pre><span class="k">DROP</span> <span class="k">INDEX</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">movies_title_idx</span><span class="p">;</span>
+<span class="k">DROP</span> <span class="k">INDEX</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">movies_genres_idx</span><span class="p">;</span></pre>
+</figure>
+
+<p>پس از اتمام کار، باید بتوانید مایگریشن 'up' را برای اضافه کردن ایندکس‌ها به پایگاه داده خود اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path ./migrations -database $GREENLIGHT_DB_DSN up
+<samp>3/u add_movies_indexes (38.638777ms)</samp></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="non-simple-configuration-and-more-information">پیکربندی غیر ساده و اطلاعات بیشتر</h4>
+
+<p>همانطور که در بالا ذکر شد، می‌توانید به جای پیکربندی <code>simple</code> که در حال حاضر استفاده می‌کنیم، از یک پیکربندی خاص زبان برای جستجوهای تمام متن استفاده کنید. وقتی lexeme‌ها یا query term‌ها را با یک پیکربندی خاص زبان ایجاد می‌کنید، کلمات رایج زبان را حذف کرده و <a href="https://en.wikipedia.org/wiki/Stemming">stemming</a> (ریشه‌یابی) کلمات را انجام می‌دهد.</p>
+
+<p>بنابراین، به عنوان مثال، اگر از پیکربندی <code>english</code> استفاده کنید، lexeme‌های تولید شده برای <code>&quot;One Flew Over the Cuckoo's Nest&quot;</code> عبارتند از <code>'cuckoo' 'flew' 'nest' 'one'</code>. یا با پیکربندی <code>spanish</code>، lexeme‌های <code>&quot;Los lunes al sol&quot;</code> عبارتند از <code>'lun' 'sol'</code>.</p>
+
+<p>می‌توانید با اجرای دستور <code>\dF</code> در PostgreSQL لیستی از تمام پیکربندهای موجود را بازیابی کنید:</p>
+
+<figure class="code bash">
+<pre>postgres=# \dF
+<samp>              List of text search configurations
+   Schema   |    Name    |              Description              
+------------+------------+---------------------------------------
+ pg_catalog | arabic     | configuration for arabic language
+ pg_catalog | danish     | configuration for danish language
+ pg_catalog | dutch      | configuration for dutch language
+ pg_catalog | english    | configuration for english language
+ ...</samp></pre>
+</figure>
+
+<p>و اگر می‌خواهید از پیکربندی <code>english</code> برای جستجوی فیلم‌های ما استفاده کنید، می‌توانید کوئری SQL را به شکل زیر به روز کنید:</p>
+
+<figure class="code plain">
+<pre>SELECT id, created_at, title, year, runtime, genres, version
+FROM movies
+WHERE (to_tsvector(&#39;english&#39;, title) @@ plainto_tsquery(&#39;english&#39;, $1) OR $1 = &#39;&#39;) 
+AND (genres @&gt; $2 OR $2 = &#39;{}&#39;)     
+ORDER BY id</pre>
+</figure>
+
+<p>اگر می‌خواهید در مورد جستجوی تمام متن PostgreSQL بیشتر بدانید، <a href="https://www.postgresql.org/docs/current/textsearch.html">مستندات رسمی</a> منبع عالی از اطلاعات و مثال‌ها است.</p>
+
+<h4 id="using-strpos-and-ilike">استفاده از STRPOS و ILIKE</h4>
+
+<p>اگر نمی‌خواهید از جستجوی تمام متن برای جستجوی جزئی عنوان فیلم استفاده کنید، برخی جایگزین‌ها تابع <code>STRPOS()</code> و عملگر <code>ILIKE</code> PostgreSQL هستند.</p>
+
+<p>تابع <a href="https://www.postgresql.org/docs/current/functions-string.html"><code>STRPOS()</code></a> PostgreSQL به شما امکان می‌دهد وجود یک رشته فرعی در یک فیلد خاص پایگاه داده را بررسی کنید. می‌توانیم آن را در کوئری SQL خود مانند زیر استفاده کنیم:</p>
+
+<figure class="code plain">
+<pre>SELECT id, created_at, title, year, runtime, genres, version
+FROM movies
+WHERE (STRPOS(LOWER(title), LOWER($1)) &gt; 0 OR $1 = &#39;&#39;) 
+AND (genres @&gt; $2 OR $2 = &#39;{}&#39;)     
+ORDER BY id</pre>
+</figure>
+
+<p>از دیدگاه مشتری، عیب این روش این است که ممکن است نتایج غیر شهودی برگرداند. به عنوان مثال، جستجو برای <code>title=the</code> هم <em><u>The</u> Breakfast Club</em> و هم <em>Black Pan<u>the</u>r</em> را در مجموعه داده‌های ما برمی‌گرداند.</p>
+
+<p>از دیدگاه سرور نیز برای مجموعه داده‌های بزرگ ایده‌آل نیست. زیرا روش مؤثری برای ایندکس‌گذاری فیلد <code>title</code> برای بررسی شرط <code>STRPOS()</code> وجود ندارد، این بدان معناست که کوئری ممکن است هر بار نیاز به اسکن کامل جدول داشته باشد.</p>
+
+<p>گزینه دیگر عملگر <a href="https://www.postgresql.org/docs/current/functions-matching.html"><code>ILIKE</code></a> است که به شما امکان می‌دهد ردیف‌هایی را که با یک الگوی خاص (بدون حساسیت به بزرگی و کوچکی حروف) مطابقت دارند پیدا کنید. می‌توانیم آن را در کوئری SQL خود مانند زیر استفاده کنیم:</p>
+
+<figure class="code plain">
+<pre>SELECT id, created_at, title, year, runtime, genres, version
+FROM movies
+WHERE (title ILIKE $1 OR $1 = &#39;&#39;) 
+AND (genres @&gt; $2 OR $2 = &#39;{}&#39;)     
+ORDER BY id</pre>
+</figure>
+
+<p>این رویکرد از دیدگاه سرور بهتر خواهد بود زیرا می‌توان با استفاده از افزونه <code>pg_trgm</code> و یک ایندکس GIN روی فیلد <code>title</code> ایندکس ایجاد کرد (برای جزئیات لطفاً <a href="https://niallburkley.com/blog/index-columns-for-like-in-postgres/">این پست</a> را ببینید).</p>
+
+<p>از طرف کلاینت نیز بهتر از رویکرد <code>STRPOS()</code> است، زیرا آنها می‌توانند رفتار تطبیق را با پیشوند/پسوند کردن عبارت جستجو با کاراکتر wildcard <code>%</code> کنترل کنند (که در رشته پرس و جوی URL باید به <code>%25</code> تبدیل شود). به عنوان مثال، برای جستجوی فیلم‌هایی با عنوانی که با &ldquo;the&rdquo; شروع می‌شود، یک مشتری می‌تواند پارامتر <code>title=the%25</code> را ارسال کند.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="09.04-filtering-lists.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="09.06.sorting-lists.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "09.04-filtering-lists.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "09.06.sorting-lists.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

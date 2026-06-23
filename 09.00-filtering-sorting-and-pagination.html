@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>فیلتر کردن، مرتب‌سازی و صفحه‌بندی &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; فیلتر کردن، مرتب‌سازی و صفحه‌بندی</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="08.03-managing-sql-query-timeouts.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="09.01-parsing-query-string-parameters.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل 9.</div>
+			<h1 id="filtering-sorting-and-pagination">فیلتر کردن، مرتب‌سازی و صفحه‌بندی</h1>
+
+<p>در این بخش از کتاب، روی ساخت قابلیت‌های یک endpoint جدید <code>GET /v1/movies</code> تمرکز خواهیم کرد که جزئیات چندین فیلم را در یک آرایه JSON برمی‌گرداند.</p>
+
+<table>
+<thead>
+<tr>
+<th>عملیات</th>
+<th>هندلر</th>
+<th>الگوی URL</th>
+<th>متد</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>نمایش اطلاعات برنامه</td>
+<td>healthcheckHandler</td>
+<td>/v1/healthcheck</td>
+<td>GET</td>
+</tr>
+
+<tr>
+<td><strong>نمایش جزئیات تمام فیلم‌ها</strong></td>
+<td><strong>listMoviesHandler</strong></td>
+<td><strong>/v1/movies</strong></td>
+<td><strong>GET</strong></td>
+</tr>
+
+<tr>
+<td>ایجاد یک فیلم جدید</td>
+<td>createMovieHandler</td>
+<td>/v1/movies</td>
+<td>POST</td>
+</tr>
+
+<tr>
+<td>نمایش جزئیات یک فیلم خاص</td>
+<td>showMovieHandler</td>
+<td>/v1/movies/:id</td>
+<td>GET</td>
+</tr>
+
+<tr>
+<td>به‌روزرسانی جزئیات یک فیلم خاص</td>
+<td>updateMovieHandler</td>
+<td>/v1/movies/:id</td>
+<td>PATCH</td>
+</tr>
+
+<tr>
+<td>حذف یک فیلم خاص</td>
+<td>deleteMovieHandler</td>
+<td>/v1/movies/:id</td>
+<td>DELETE</td>
+</tr>
+</tbody>
+</table>
+<p>قابلیت‌های این endpoint را به‌صورت تدریجی توسعه خواهیم داد و ابتدا داده‌های <em>تمام</em> فیلم‌ها را برمی‌گردانیم و سپس با افزودن قابلیت‌های فیلتر کردن، مرتب‌سازی و صفحه‌بندی، آن را کاربردی‌تر و مفیدتر خواهیم کرد.</p>
+
+<p>در این بخش یاد خواهید گرفت که چگونه:</p>
+
+<ul>
+<li><p>جزئیات چندین منبع را در یک پاسخ JSON واحد برگردانید.</p></li>
+
+<li><p>پارامترهای فیلتر اختیاری را بپذیرید و اعمال کنید تا مجموعه داده برگشتی را محدود کنید.</p></li>
+
+<li><p>جستجوی متن کامل در فیلدهای پایگاه داده خود با استفاده از قابلیت‌های داخلی PostgreSQL پیاده‌سازی کنید.</p></li>
+
+<li><p>پارامترهای مرتب‌سازی را به‌صورت ایمن بپذیرید و اعمال کنید تا ترتیب نتایج در مجموعه داده را تغییر دهید.</p></li>
+
+<li><p>یک الگوی قابل استفاده مجدد و عملی برای پشتیبانی از صفحه‌بندی در مجموعه داده‌های بزرگ توسعه دهید و فراداده صفحه‌بندی را در پاسخ‌های JSON خود برگردانید.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="08.03-managing-sql-query-timeouts.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="09.01-parsing-query-string-parameters.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "08.03-managing-sql-query-timeouts.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "09.01-parsing-query-string-parameters.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

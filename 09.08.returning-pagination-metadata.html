@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>بازگرداندن اطلاعات متای صفحه‌بندی &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="09.00-filtering-sorting-and-pagination.html">فیلتر کردن، مرتب‌سازی و صفحه‌بندی</a> &rsaquo; بازگرداندن اطلاعات متای صفحه‌بندی</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="09.07-paginating-lists.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="10.00-rate-limiting.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۹.۸.</div>
+			<h2 id="returning-pagination-metadata">بازگرداندن اطلاعات متای صفحه‌بندی</h2>
+
+<p>تا اینجای کار، صفحه‌بندی در endpoint <code>GET /v1/movies</code> ما به خوبی کار می‌کند، اما بهتر خواهد بود اگر بتوانیم اطلاعات اضافی همراه با پاسخ ارسال کنیم. اطلاعاتی مانند شماره صفحه <em>فعلی</em> و <em>آخرین</em> صفحه، و <em>تعداد کل رکوردهای موجود</em> به کلاینت کمک می‌کند تا درک بهتری از پاسخ داشته باشد و پیمایش بین صفحات آسان‌تر شود.</p>
+
+<p>در این فصل، پاسخ را بهبود می‌دهیم تا اطلاعات اضافی صفحه‌بندی را شامل شود، مشابه این:</p>
+
+<figure class="code plain">
+<pre>{
+    &#34;metadata&#34;: {
+        &#34;current_page&#34;: 1,
+        &#34;page_size&#34;: 20,
+        &#34;first_page&#34;: 1,
+        &#34;last_page&#34;: 42,
+        &#34;total_records&#34;: 832
+    },
+    &#34;movies&#34;: [
+        {
+            &#34;id&#34;: 1,
+            &#34;title&#34;: &#34;Moana&#34;,
+            &#34;year&#34;: 2015,
+            &#34;runtime&#34;: &#34;107 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;animation&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 1
+        },
+        ...
+    ]
+}</pre>
+</figure>
+
+<h3 id="calculating-the-total-records">محاسبه تعداد کل رکوردها</h3>
+
+<p>چالش اصلی در این کار، تولید عدد <code>total_records</code> است. می‌خواهیم این عدد تعداد کل رکوردهای موجود <em>با توجه به فیلترهای <code>title</code> و <code>genres</code> که اعمال شده‌اند</em> را نشان دهد — نه مجموع مطلق رکوردها در جدول <code>movies</code>.</p>
+
+<p>روش خوبی برای این کار، تطبیق کوئری SQL موجود با یک <a href="https://www.postgresql.org/docs/current/tutorial-window.html">تابع پنجره‌ای</a> است که تعداد کل سطرهای فیلتر شده را می‌شمارد، به این صورت:</p>
+
+<figure class="code plain">
+<pre>SELECT count(*) OVER(), id, created_at, title, year, runtime, genres, version
+FROM movies
+WHERE (to_tsvector(&#39;simple&#39;, title) @@ plainto_tsquery(&#39;simple&#39;, $1) OR $1 = &#39;&#39;) 
+AND (genres @&gt; $2 OR $2 = &#39;{}&#39;)     
+ORDER BY %s %s, id ASC
+LIMIT $3 OFFSET $4</pre>
+</figure>
+
+<p>قرار دادن عبارت <code>count(*) OVER()</code> در ابتدای کوئری باعث می‌شود تعداد رکوردهای فیلتر شده به عنوان اولین مقدار در هر سطر قرار بگیرد. چیزی شبیه به این:</p>
+
+<figure class="code plain">
+<pre> count | id |       created_at       |       title        | year | runtime |          genres           | version 
+-------+----+------------------------+--------------------+------+---------+---------------------------+---------
+     3 |  1 | 2020-11-27 17:17:25+01 | Moana              | 2015 |     107 | {animation,adventure}     |       1
+     3 |  2 | 2020-11-27 18:01:45+01 | Black Panther      | 2018 |     134 | {sci-fi,action,adventure} |       2
+     3 |  4 | 2020-11-27 18:02:20+01 | The Breakfast Club | 1985 |      97 | {comedy,drama}            |       6</pre>
+</figure>
+
+<p>وقتی PostgreSQL این کوئری SQL را اجرا می‌کند، توالی رویدادها (به صورت بسیار ساده‌شده) به این شکل اتفاق می‌افتد:</p>
+
+<ol>
+<li>عبارت <code>WHERE</code> برای فیلتر کردن داده‌ها در جدول <code>movies</code> و دریافت <em>سطرهای واجد شرایط</em> استفاده می‌شود.</li>
+<li>تابع پنجره‌ای <code>count(*) OVER()</code> اعمال می‌شود که تمام سطرهای واجد شرایط را می‌شمارد.</li>
+<li>قواعد <code>ORDER BY</code> اعمال شده و سطرهای واجد شرایط مرتب می‌شوند.</li>
+<li>قواعد <code>LIMIT</code> و <code>OFFSET</code> اعمال شده و زیرمجموعه مناسبی از سطرهای مرتب شده واجد شرایط بازگردانده می‌شود.</li>
+</ol>
+
+<h3 id="updating-the-code">به‌روزرسانی کد</h3>
+
+<p>با تمام شدن این توضیح مختصر، بیایید آن را راه‌اندازی کنیم. ابتدا فایل <code>internal/data/filters.go</code> را به‌روزرسانی می‌کنیم تا یک ساختار <code>Metadata</code> جدید برای نگهداری اطلاعات متای صفحه‌بندی و یک تابع کمکی برای محاسبه مقادیر تعریف کنیم. به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/filters.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;math&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;strings&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Define a new Metadata struct for holding the pagination metadata.
+</span><span class="c1"></span><span class="kd">type</span> <span class="nx">Metadata</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">CurrentPage</span>  <span class="kt">int</span> <span class="s">`</span><span class="s">json:&#34;current_page,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">PageSize</span>     <span class="kt">int</span> <span class="s">`</span><span class="s">json:&#34;page_size,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">FirstPage</span>    <span class="kt">int</span> <span class="s">`</span><span class="s">json:&#34;first_page,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">LastPage</span>     <span class="kt">int</span> <span class="s">`</span><span class="s">json:&#34;last_page,omitzero&#34;</span><span class="s">`</span>
+    <span class="nx">TotalRecords</span> <span class="kt">int</span> <span class="s">`</span><span class="s">json:&#34;total_records,omitzero&#34;</span><span class="s">`</span>
+<span class="p">}</span>
+
+<span class="c1">// The calculateMetadata() function calculates the appropriate pagination metadata 
+</span><span class="c1"></span><span class="c1">// values given the total number of records, current page, and page size values. Note 
+</span><span class="c1"></span><span class="c1">// that when the last page value is calculated we are dividing two int values, and 
+</span><span class="c1"></span><span class="c1">// when dividing integer types in Go the result will also be an integer type, with 
+</span><span class="c1"></span><span class="c1">// the modulus (or remainder) dropped. So, for example, if there were 12 records in total 
+</span><span class="c1"></span><span class="c1">// and a page size of 5, the last page value would be (12+5-1)/5 = 3.2, which is then
+</span><span class="c1"></span><span class="c1">// truncated to 3 by Go. 
+</span><span class="c1"></span><span class="kd">func</span> <span class="nf">calculateMetadata</span><span class="p">(</span><span class="nx">totalRecords</span><span class="p">,</span> <span class="nx">page</span><span class="p">,</span> <span class="nx">pageSize</span> <span class="kt">int</span><span class="p">)</span> <span class="nx">Metadata</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">totalRecords</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+        <span class="c1">// Note that we return an empty Metadata struct if there are no records.
+</span><span class="c1"></span>        <span class="k">return</span> <span class="nx">Metadata</span><span class="p">{</span><span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="nx">Metadata</span><span class="p">{</span>
+        <span class="nx">CurrentPage</span><span class="p">:</span>  <span class="nx">page</span><span class="p">,</span>
+        <span class="nx">PageSize</span><span class="p">:</span>     <span class="nx">pageSize</span><span class="p">,</span>
+        <span class="nx">FirstPage</span><span class="p">:</span>    <span class="mi">1</span><span class="p">,</span>
+        <span class="nx">LastPage</span><span class="p">:</span>     <span class="p">(</span><span class="nx">totalRecords</span> <span class="o">+</span> <span class="nx">pageSize</span> <span class="o">-</span> <span class="mi">1</span><span class="p">)</span> <span class="o">/</span> <span class="nx">pageSize</span><span class="p">,</span>
+        <span class="nx">TotalRecords</span><span class="p">:</span> <span class="nx">totalRecords</span><span class="p">,</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>سپس باید به متد <code>GetAll()</code> برگردیم و آن را به‌روزرسانی کنیم تا از کوئری SQL جدید (با تابع پنجره‌ای) برای دریافت تعداد کل رکوردها استفاده کند. سپس، اگر همه چیز به درستی کار کرد، از تابع <code>calculateMetadata()</code> برای تولید اطلاعات متای صفحه‌بندی و بازگرداندن آن همراه با داده‌های فیلم استفاده می‌کنیم.</p>
+
+<p>تابع <code>GetAll()</code> را به این صورت به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="c1">// Update the function signature to return a Metadata struct.
+</span><span class="c1"></span><span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">GetAll</span><span class="p">(</span><span class="nx">title</span> <span class="kt">string</span><span class="p">,</span> <span class="nx">genres</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">,</span> <span class="nx">filters</span> <span class="nx">Filters</span><span class="p">)</span> <span class="p">(</span><span class="p">[</span><span class="p">]</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="nx">Metadata</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Update the SQL query to include the window function which counts the total 
+</span><span class="c1"></span>    <span class="c1">// (filtered) records.
+</span><span class="c1"></span>    <span class="nx">query</span> <span class="o">:=</span> <span class="nx">fmt</span><span class="p">.</span><span class="nf">Sprintf</span><span class="p">(</span><span class="s">`</span><span class="s">
+</span><span class="s">        SELECT count(*) OVER(), id, created_at, title, year, runtime, genres, version
+</span><span class="s">        FROM movies
+</span><span class="s">        WHERE (to_tsvector(&#39;simple&#39;, title) @@ plainto_tsquery(&#39;simple&#39;, $1) OR $1 = &#39;&#39;) 
+</span><span class="s">        AND (genres @&gt; $2 OR $2 = &#39;</span><span class="s">{</span><span class="s">}&#39;)     
+</span><span class="s">        ORDER BY %s %s, id ASC
+</span><span class="s">        LIMIT $3 OFFSET $4</span><span class="s">`</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">sortColumn</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">sortDirection</span><span class="p">(</span><span class="p">)</span><span class="p">)</span>
+
+    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">3</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">args</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="nx">any</span><span class="p">{</span><span class="nx">title</span><span class="p">,</span> <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="nx">genres</span><span class="p">)</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">limit</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nf">offset</span><span class="p">(</span><span class="p">)</span><span class="p">}</span>
+
+    <span class="nx">rows</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">args</span><span class="o">...</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">Metadata</span><span class="p">{</span><span class="p">}</span><span class="p">,</span> <span class="nx">err</span> <span class="c1">// Update this to return an empty Metadata struct.
+</span><span class="c1"></span>    <span class="p">}</span>
+
+    <span class="k">defer</span> <span class="nx">rows</span><span class="p">.</span><span class="nf">Close</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Declare a totalRecords variable.
+</span><span class="c1"></span>    <span class="nx">totalRecords</span> <span class="o">:=</span> <span class="mi">0</span>
+    <span class="nx">movies</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="o">*</span><span class="nx">Movie</span><span class="p">{</span><span class="p">}</span>
+
+    <span class="k">for</span> <span class="nx">rows</span><span class="p">.</span><span class="nf">Next</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kd">var</span> <span class="nx">movie</span> <span class="nx">Movie</span>
+
+        <span class="nx">err</span> <span class="o">:=</span> <span class="nx">rows</span><span class="p">.</span><span class="nf">Scan</span><span class="p">(</span>
+            <span class="o">&amp;</span><span class="nx">totalRecords</span><span class="p">,</span> <span class="c1">// Scan the count from the window function into totalRecords.
+</span><span class="c1"></span>            <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">ID</span><span class="p">,</span>
+            <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">CreatedAt</span><span class="p">,</span>
+            <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span>
+            <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span>
+            <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span>
+            <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span>
+            <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">Metadata</span><span class="p">{</span><span class="p">}</span><span class="p">,</span> <span class="nx">err</span> <span class="c1">// Update this to return an empty Metadata struct.
+</span><span class="c1"></span>        <span class="p">}</span>
+
+        <span class="nx">movies</span> <span class="p">=</span> <span class="nb">append</span><span class="p">(</span><span class="nx">movies</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">movie</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="nx">err</span> <span class="p">=</span> <span class="nx">rows</span><span class="p">.</span><span class="nf">Err</span><span class="p">(</span><span class="p">)</span><span class="p">;</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">Metadata</span><span class="p">{</span><span class="p">}</span><span class="p">,</span> <span class="nx">err</span> <span class="c1">// Update this to return an empty Metadata struct.
+</span><span class="c1"></span>    <span class="p">}</span>
+
+    <span class="c1">// Generate a Metadata struct, passing in the total record count and pagination
+</span><span class="c1"></span>    <span class="c1">// parameters from the client.
+</span><span class="c1"></span>    <span class="nx">metadata</span> <span class="o">:=</span> <span class="nf">calculateMetadata</span><span class="p">(</span><span class="nx">totalRecords</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nx">Page</span><span class="p">,</span> <span class="nx">filters</span><span class="p">.</span><span class="nx">PageSize</span><span class="p">)</span>
+
+    <span class="c1">// Include the metadata struct when returning.
+</span><span class="c1"></span>    <span class="k">return</span> <span class="nx">movies</span><span class="p">,</span> <span class="nx">metadata</span><span class="p">,</span> <span class="kc">nil</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>در نهایت، باید هندلر <code>listMoviesHandler</code> را به‌روزرسانی کنیم تا ساختار <code>Metadata</code> بازگردانده شده توسط <code>GetAll()</code> را دریافت کرده و اطلاعات آن را در پاسخ JSON قرار دهد. به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">listMoviesHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>  <span class="kt">string</span>
+        <span class="nx">Genres</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span>
+        <span class="nx">data</span><span class="p">.</span><span class="nx">Filters</span>
+    <span class="p">}</span>
+
+    <span class="nx">v</span> <span class="o">:=</span> <span class="nx">validator</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">qs</span> <span class="o">:=</span> <span class="nx">r</span><span class="p">.</span><span class="nx">URL</span><span class="p">.</span><span class="nf">Query</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Title</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readString</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;&#34;</span><span class="p">)</span>
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readCSV</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;genres&#34;</span><span class="p">,</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="p">}</span><span class="p">)</span>
+
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">Page</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readInt</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;page&#34;</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="nx">v</span><span class="p">)</span>
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">PageSize</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readInt</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;page_size&#34;</span><span class="p">,</span> <span class="mi">20</span><span class="p">,</span> <span class="nx">v</span><span class="p">)</span>
+
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">Sort</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readString</span><span class="p">(</span><span class="nx">qs</span><span class="p">,</span> <span class="s">&#34;sort&#34;</span><span class="p">,</span> <span class="s">&#34;id&#34;</span><span class="p">)</span>
+    <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">.</span><span class="nx">SortSafelist</span> <span class="p">=</span> <span class="p">[</span><span class="p">]</span><span class="kt">string</span><span class="p">{</span><span class="s">&#34;id&#34;</span><span class="p">,</span> <span class="s">&#34;title&#34;</span><span class="p">,</span> <span class="s">&#34;year&#34;</span><span class="p">,</span> <span class="s">&#34;runtime&#34;</span><span class="p">,</span> <span class="s">&#34;-id&#34;</span><span class="p">,</span> <span class="s">&#34;-title&#34;</span><span class="p">,</span> <span class="s">&#34;-year&#34;</span><span class="p">,</span> <span class="s">&#34;-runtime&#34;</span><span class="p">}</span>
+
+    <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nf">ValidateFilters</span><span class="p">(</span><span class="nx">v</span><span class="p">,</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">)</span><span class="p">;</span> <span class="p">!</span><span class="nx">v</span><span class="p">.</span><span class="nf">Valid</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">failedValidationResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Accept the metadata struct as a return value.
+</span><span class="c1"></span>    <span class="nx">movies</span><span class="p">,</span> <span class="nx">metadata</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nx">models</span><span class="p">.</span><span class="nx">Movies</span><span class="p">.</span><span class="nf">GetAll</span><span class="p">(</span><span class="nx">input</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span><span class="p">,</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Filters</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Include the metadata in the response envelope.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusOK</span><span class="p">,</span> <span class="nx">envelope</span><span class="p">{</span><span class="s">&#34;movies&#34;</span><span class="p">:</span> <span class="nx">movies</span><span class="p">,</span> <span class="s">&#34;metadata&#34;</span><span class="p">:</span> <span class="nx">metadata</span><span class="p">}</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>خوشبختانه API را مجدداً راه‌اندازی کنید و این قابلیت جدید را با ارسال درخواست‌های مختلف به endpoint <code>GET /v1/movies</code> آزمایش کنید. باید ببینید که اطلاعات متای صفحه‌بندی صحیح اکنون در پاسخ قرار گرفته است. به عنوان مثال:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?page=1&amp;page_size=2&#34;
+<samp>{
+    &#34;metadata&#34;: {
+        &#34;current_page&#34;: 1,
+        &#34;page_size&#34;: 2,
+        &#34;first_page&#34;: 1,
+        &#34;last_page&#34;: 2,
+        &#34;total_records&#34;: 3
+    },
+    &#34;movies&#34;: [
+        {
+            &#34;id&#34;: 1,
+            &#34;title&#34;: &#34;Moana&#34;,
+            &#34;year&#34;: 2015,
+            &#34;runtime&#34;: &#34;107 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;animation&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 1
+        },
+        {
+            &#34;id&#34;: 2,
+            &#34;title&#34;: &#34;Black Panther&#34;,
+            &#34;year&#34;: 2018,
+            &#34;runtime&#34;: &#34;134 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;sci-fi&#34;,
+                &#34;action&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 2
+        }
+    ]
+}</samp></pre>
+</figure>
+
+<p>و اگر درخواستی با فیلتر اعمال شده ارسال کنید، باید ببینید که مقدار <code>last_page</code> و تعداد <code>total_records</code> تغییر می‌کند تا فیلترهای اعمال شده را منعکس کند. به عنوان مثال، با درخواست فقط فیلم‌هایی با ژانر &ldquo;adventure&rdquo; می‌توانیم ببینیم که تعداد <code>total_records</code> به <code>2</code> کاهش می‌یابد:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?genres=adventure&#34;
+<samp>{
+    &#34;metadata&#34;: {
+        &#34;current_page&#34;: 1,
+        &#34;page_size&#34;: 20,
+        &#34;first_page&#34;: 1,
+        &#34;last_page&#34;: 1,
+        &#34;total_records&#34;: 2
+    },
+    &#34;movies&#34;: [
+        {
+            &#34;id&#34;: 1,
+            &#34;title&#34;: &#34;Moana&#34;,
+            &#34;year&#34;: 2015,
+            &#34;runtime&#34;: &#34;107 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;animation&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 1
+        },
+        {
+            &#34;id&#34;: 2,
+            &#34;title&#34;: &#34;Black Panther&#34;,
+            &#34;year&#34;: 2018,
+            &#34;runtime&#34;: &#34;134 mins&#34;,
+            &#34;genres&#34;: [
+                &#34;sci-fi&#34;,
+                &#34;action&#34;,
+                &#34;adventure&#34;
+            ],
+            &#34;version&#34;: 2
+        }
+    ]
+}</samp></pre>
+</figure>
+
+<p>در نهایت، اگر درخواستی با مقدار صفحه بیش از حد بالا ارسال کنید، باید پاسخی با شیء متای خالی و آرایه فیلم‌های خالی دریافت کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl &#34;localhost:4000/v1/movies?page=100&#34;
+<samp>{
+    &#34;metadata&#34;: {},
+    &#34;movies&#34;: []
+}</samp></pre>
+</figure>
+
+<p>در چند فصل اخیر، مجبور شدیم کار زیادی روی endpoint <code>GET /v1/movies</code> انجام دهیم. اما نتیجه نهایی واقعاً قدرتمند است. کلاینت اکنون کنترل زیادی روی محتوای پاسخ خود دارد، با پشتیبانی از فیلتر کردن، صفحه‌بندی و مرتب‌سازی.</p>
+
+<p>با ساختار <code>Filters</code> که ایجاد کرده‌ایم، چیزی داریم که به راحتی می‌توانیم آن را در هر endpoint دیگری که به قابلیت صفحه‌بندی و مرتب‌سازی نیاز دارد استفاده کنیم. و اگر یک قدم به عقب برداریم و به کد نهایی نگاه کنیم که در <code>listMoviesHandler</code> و متد <code>GetAll()</code> مدل پایگاه داده خود نوشتی‌ایم، کد <em>خیلی بیشتری</em> نسبت به نسخه‌های اولیه endpoint نیست.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="09.07-paginating-lists.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="10.00-rate-limiting.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "09.07-paginating-lists.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "10.00-rate-limiting.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
