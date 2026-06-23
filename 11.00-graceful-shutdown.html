@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>خاموش شدن آرام &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+					<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; خاموش شدن آرام</span>
+					
+				
+			</div>
+			<div>
+				&lsaquo; <a href="10.03-configuring-the-rate-limiters.html">قبلی</a>
+				&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+				<a href="11.01-sending-shutdown-signals.html">بعدی</a> &rsaquo;
+			</div>
+		</div>
+	</header>
+	<main class="wrapper text">
+		<div class="chapter">فصل ۱۱.</div>
+		<h1 id="graceful-shutdown">خاموش شدن آرام</h1>
+
+<p>در این بخش بعدی کتاب، درباره یک موضوع مهم اما اغلب نادیده گرفته شده صحبت خواهیم کرد: <em>چگونه برنامه در حال اجرای خود را به صورت ایمن متوقف کنیم</em>.</p>
+
+<p>در حال حاضر، وقتی برنامه API خود را متوقف می‌کنیم (معمولاً با فشردن <code>Ctrl+C</code>)، بلافاصله خاموش می‌شود و فرصتی برای تکمیل درخواست‌های HTTP در حال پردازش وجود ندارد. این دو دلیل نامطلوب است:</p>
+
+<ul>
+<li>یعنی کلاینت‌ها پاسخی به درخواست‌های در حال پردازش خود دریافت نمی‌کنند &mdash; تنها چیزی که تجربه خواهند کرد، بسته شدن ناگهانی اتصال HTTP است.</li>
+<li>هر کاری که توسط handler‌های ما در حال انجام است ممکن است ناتمام باقی بماند.</li>
+</ul>
+
+<p>ما این مشکلات را با اضافه کردن قابلیت <em>خاموش شدن آرام</em> به برنامه خود کاهش خواهیم داد، به طوری که درخواست‌های HTTP در حال پردازش فرصت تکمیل پردازش را <em>قبل از</em> خاموش شدن برنامه داشته باشند.</p>
+
+<p>شما درباره موارد زیر یاد خواهید گرفت:</p>
+
+<ul>
+<li><p>سیگنال‌های خاموش شدن &mdash; چیستند، چگونه ارسال شوند، و چگونه در برنامه API خود به آن‌ها گوش دهید.</p></li>
+
+<li><p>چگونه از این سیگنال‌ها برای اجرای خاموش شدن آرام سرور HTTP با استفاده از متد <a href="https://golang.org/pkg/net/http/#Server.Shutdown"><code>Shutdown()</code></a> در Go استفاده کنید.</p></li>
+</ul>
+
+	</main>
+	<footer>
+		<div class="wrapper">
+			<div>
+				&lsaquo; <a href="10.03-configuring-the-rate-limiters.html">قبلی</a>
+			</div>
+			<div>
+				<a href="00.01-contents.html">فهرست مطالب</a>
+			</div>
+			<div>
+				<a href="11.01-sending-shutdown-signals.html">بعدی</a> &rsaquo;
+			</div>
+		</div>
+	</footer>
+	<script>
+		document.onkeydown = function(evt) {
+			evt = evt || window.event;
+			switch (evt.keyCode) {
+				
+				case 37:
+					window.location.href = "10.03-configuring-the-rate-limiters.html";
+					break;
+					
+				
+				case 39:
+					window.location.href = "11.01-sending-shutdown-signals.html";
+					break;
+					
+			}
+		};
+	</script>
+</body>
+</html>

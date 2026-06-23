@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>محدودیت نرخ &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; محدودیت نرخ</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="09.08.returning-pagination-metadata.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="10.01-global-rate-limiting.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۰.</div>
+			<h1 id="rate-limiting">محدودیت نرخ</h1>
+
+<p>اگر در حال ساخت یک API برای استفاده عمومی هستید، بسیار محتمل است که بخواهید نوعی <em>محدودیت نرخ</em> را پیاده‌سازی کنید تا از ایجاد <em>درخواست‌های بیش از حد زیاد در زمان کوتاه</em> توسط کلاینت‌ها و ایجاد فشار بیش از حد بر سرور خود جلوگیری کنید.</p>
+
+<p>در این بخش کتاب، ما قصد داریم برای کمک به این کار، یک middleware بسازیم.</p>
+
+<p>اساساً، می‌خواهیم این middleware بررسی کند که در چند ثانیه اخیر چند درخواست دریافت شده است و &mdash; اگر تعداد بیش از حد زیاد باشد &mdash; باید به کلاینت پاسخ <code>429 Too Many Requests</code> ارسال کند. ما این middleware را قبل از هندلرهای اصلی برنامه خود قرار می‌دهیم تا این بررسی <em>قبل</em> از هر پردازش سنگینی مانند رمزگشایی بدنه درخواست JSON یا کوئری پایگاه داده انجام شود.</p>
+
+<p>شما یاد خواهید گرفت:</p>
+
+<ul>
+<li><p>درباره اصول پشت الگوریتم‌های محدودکننده نرخ <em>token-bucket</em> و نحوه استفاده از آن‌ها در زمینه یک API یا برنامه وب.</p></li>
+
+<li><p>نحوه ساخت middleware برای محدود کردن نرخ درخواست‌ها به endpoint‌های API خود، ابتدا با ایجاد یک محدودکننده نرخ سراسری سپس گسترش آن برای پشتیبانی از محدودیت بر اساس آدرس IP هر کلاینت.</p></li>
+
+<li><p>نحوه پیکربندی رفتار محدودکننده نرخ در زمان اجرا، از جمله غیرفعال کردن کامل محدودکننده نرخ برای اهداف تست.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="09.08.returning-pagination-metadata.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="10.01-global-rate-limiting.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "09.08.returning-pagination-metadata.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "10.01-global-rate-limiting.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

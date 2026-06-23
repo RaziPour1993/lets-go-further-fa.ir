@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ارسال سیگنال‌های خاموش شدن &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="11.00-graceful-shutdown.html">خاموش شدن صحیح</a> &rsaquo; ارسال سیگنال‌های خاموش شدن</span>
+						
+					
+				</div>
+				<div>
+					&rsaquo; <a href="11.00-graceful-shutdown.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="11.02-intercepting-shutdown-signals.html">بعدی</a> &lsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۱.۱.</div>
+			<h2 id="sending-shutdown-signals">ارسال سیگنال‌های خاموش شدن</h2>
+
+<p>وقتی برنامه ما در حال اجراست، می‌توانیم در هر زمانی آن را با ارسال یک <a href="https://en.wikipedia.org/wiki/Signal_(IPC)#POSIX_signals">سیگنال</a> خاص خاتمه دهیم. یک روش رایج برای این کار که احتمالاً تا حالا از آن استفاده کرده‌اید، فشار دادن <code>Ctrl+C</code> روی صفحه‌کلید برای ارسال سیگنال <em>وقفه</em> است &mdash; که به عنوان <code>SIGINT</code> نیز شناخته می‌شود.</p>
+
+<p>اما این تنها نوع سیگنالی نیست که می‌تواند برنامه ما را متوقف کند. برخی از انواع رایج دیگر عبارتند از:</p>
+
+<table>
+<thead>
+<tr>
+<th>سیگنال</th>
+<th>توضیحات</th>
+<th>میانبر صفحه‌کلید</th>
+<th>قابل دریافت</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td><code>SIGINT</code></td>
+<td>وقفه از صفحه‌کلید</td>
+<td><code>Ctrl+C</code></td>
+<td>بله</td>
+</tr>
+
+<tr>
+<td><code>SIGQUIT</code></td>
+<td>خروج از صفحه‌کلید</td>
+<td><code>Ctrl+\</code></td>
+<td>بله</td>
+</tr>
+
+<tr>
+<td><code>SIGKILL</code></td>
+<td>کشتن پروسه (خاتمه فوری)</td>
+<td>-</td>
+<td>خیر</td>
+</tr>
+
+<tr>
+<td><code>SIGTERM</code></td>
+<td>خاتمه دادن به پروسه به صورت منظم</td>
+<td>-</td>
+<td>بله</td>
+</tr>
+</tbody>
+</table>
+<p>مهم است که از همان ابتدا توضیح دهیم برخی سیگنال‌ها <em>قابل دریافت</em> هستند و برخی دیگر نیستند. سیگنال‌های قابل دریافت توسط برنامه ما قابل رهگیری هستند و می‌توانند نادیده گرفته شوند یا برای اجرای یک عمل خاص (مانند خاموش شدن صحیح) استفاده شوند. سیگنال‌های دیگر، مانند <code>SIGKILL</code>، قابل دریافت نیستند و نمی‌توان آن‌ها را رهگیری کرد.</p>
+
+<p>بیایید نگاهی سریع به عملکرد این سیگنال‌ها بیندازیم. اگر می‌خواهید همراهی کنید، برنامه API را با همان دستور <code>go run ./cmd/api</code> مانند همیشه اجرا کنید:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development</samp></pre>
+</figure>
+
+<p>با انجام این کار باید پروسه‌ای با نام <code>api</code> روی دستگاه شما شروع به کار کند. می‌توانید از دستور <code>pgrep</code> برای تأیید وجود این پروسه استفاده کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ pgrep -l api
+<samp>4414 api</samp></pre>
+</figure>
+
+<p>در مورد من، می‌توانم ببینم که پروسه <code>api</code> در حال اجراست و <em>شناسه پروسه</em> آن <code>4414</code> است (شناسه پروسه شما احتمالاً متفاوت خواهد بود).</p>
+
+<p>پس از تأیید این موضوع، سعی کنید با استفاده از دستور <a href="https://linuxize.com/post/pkill-command-in-linux/"><code>pkill</code></a> سیگنال <code>SIGKILL</code> را به پروسه <code>api</code> ارسال کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ pkill -SIGKILL api</pre>
+</figure>
+
+<p>اگر به پنجره ترمینالی که برنامه API را اجرا می‌کند برگردید، باید ببینید که برنامه خاتمه یافته و آخرین خط در جریان خروجی <code>signal: killed</code> است. مشابه این:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development
+signal: killed</samp></pre>
+</figure>
+
+<p>می‌توانید همان فرآیند را تکرار کنید، اما این بار به جای آن سیگنال <code>SIGTERM</code> را ارسال کنید:</p>
+
+<figure class="code bash">
+<pre>$ pkill -SIGTERM api</pre>
+</figure>
+
+<p>این بار باید خط <code>signal: terminated</code> را در انتهای خروجی ببینید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development
+signal: terminated</samp></pre>
+</figure>
+
+<p>همچنین می‌توانید ارسال سیگنال <code>SIGQUIT</code> را امتحان کنید &mdash; با فشار دادن <code>Ctrl+\</code> روی صفحه‌کلید یا اجرای <code>pkill -SIGQUIT api</code>. این کار باعث خروج برنامه با یک dump از پشته (stack) می‌شود، مشابه این:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development
+SIGQUIT: quit
+PC=0x46ebe1 m=0 sigcode=0
+
+goroutine 0 [idle]:
+runtime.futex(0x964870, 0x80, 0x0, 0x0, 0x0, 0x964720, 0x7ffd551034f8, 0x964420, 0x7ffd55103508, 0x40dcbf, ...)
+        /usr/local/go/src/runtime/sys_linux_amd64.s:579 +0x21
+runtime.futexsleep(0x964870, 0x0, 0xffffffffffffffff)
+        /usr/local/go/src/runtime/os_linux.go:44 +0x46
+runtime.notesleep(0x964870)
+        /usr/local/go/src/runtime/lock_futex.go:159 +0x9f
+runtime.mPark()
+        /usr/local/go/src/runtime/proc.go:1340 +0x39
+runtime.stopm()
+        /usr/local/go/src/runtime/proc.go:2257 +0x92
+runtime.findrunnable(0xc00002c000, 0x0)
+        /usr/local/go/src/runtime/proc.go:2916 +0x72e
+runtime.schedule()
+        /usr/local/go/src/runtime/proc.go:3125 +0x2d7
+runtime.park_m(0xc000000180)
+        /usr/local/go/src/runtime/proc.go:3274 +0x9d
+runtime.mcall(0x0)
+        /usr/local/go/src/runtime/asm_amd64.s:327 +0x5b
+...</samp></pre>
+</figure>
+
+<p>می‌توانیم ببینیم که این سیگنال‌ها در خاتمه دادن به برنامه ما مؤثر هستند &mdash; اما مشکلی که داریم این است که همه آن‌ها باعث خروج <em>فوری</em> برنامه ما می‌شوند.</p>
+
+<p>خوشبختانه، Go ابزارهایی را در پکیج <a href="https://golang.org/pkg/os/signal/"><code>os/signal</code></a> فراهم می‌کند که می‌توانیم از آن‌ها برای رهگیری سیگنال‌های قابل دریافت و اجرای خاموش شدن صحیح برنامه خود استفاده کنیم. در فصل بعدی نحوه انجام این کار را بررسی خواهیم کرد.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&rsaquo; <a href="11.00-graceful-shutdown.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="11.02-intercepting-shutdown-signals.html">بعدی</a> &lsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "11.00-graceful-shutdown.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "11.02-intercepting-shutdown-signals.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
