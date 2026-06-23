@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ایجاد قالب‌های ایمیل &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="13.00-sending-emails.html">ارسال ایمیل</a> &rsaquo; ایجاد قالب‌های ایمیل</span>
+					
+				
+				</div>
+				<div>
+					&lsaquo; <a href="13.01-smtp-server-setup.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="13.03-sending-a-welcome-email.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۳.۲.</div>
+			<h2 id="creating-email-templates">ایجاد قالب‌های ایمیل</h2>
+
+<p>برای شروع، محتوای ایمیل خوش‌آمدگویی را بسیار ساده نگه می‌داریم، با یک پیام کوتاه تا به کاربر اطلاع دهیم که ثبت‌نام‌شان موفقیت‌آمیز بوده و شماره شناسایی‌شان را تأیید کنیم. چیزی شبیه به این:</p>
+
+<figure class="code plain">
+<pre>Hi,
+
+Thanks for signing up for a Greenlight account. We&#39;re excited to have you on board!
+
+For future reference, your user ID number is 123.
+
+Thanks,
+
+The Greenlight Team</pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> درج شناسه کاربر احتمالاً چیزی نیست که معمولاً در ایمیل خوش‌آمدگویی انجام دهید، اما برای ما روش ساده‌ای است تا نحوه درج <em>داده‌های پویا</em> در ایمیل‌ها را نشان دهیم &mdash; به جای فقط محتوای ایستا.
+</p></aside>
+
+<p>رویکردهای مختلفی وجود دارد که می‌توانیم برای تعریف و مدیریت محتوای این ایمیل از آن‌ها استفاده کنیم، اما یک روش راحت و انعطاف‌پذیر استفاده از قابلیت template در Go با پکیج <a href="https://golang.org/pkg/html/template/"><code>html/template</code></a> است.</p>
+
+<p>اگر قصد دارید همراه پیش بروید، ابتدا یک پوشه جدید <code>internal/mailer/templates</code> در پروژه خود ایجاد کنید و سپس یک فایل <code>user_welcome.tmpl</code> به آن اضافه کنید. به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ mkdir -p internal/mailer/templates
+$ touch internal/mailer/templates/user_welcome.tmpl</pre>
+</figure>
+
+<p>در این فایل، سه <em>قالب نام‌گذاری‌شده</em> برای استفاده در ایمیل خوش‌آمدگویی تعریف خواهیم کرد:</p>
+
+<ul>
+<li>یک قالب <code>&quot;subject&quot;</code> حاوی خط موضوع ایمیل.</li>
+<li>یک قالب <code>&quot;plainBody&quot;</code> حاوی نسخه متن ساده متن ایمیل.</li>
+<li>یک قالب <code>&quot;htmlBody&quot;</code> حاوی نسخه HTML متن ایمیل.</li>
+</ul>
+
+<p>فایل <code>internal/mailer/templates/user_welcome.tmpl</code> را به‌روزرسانی کنید تا محتوای این قالب‌ها را شامل شود:</p>
+
+<figure class="code plain">
+<figcaption>فایل: internal/mailer/templates/user_welcome.tmpl</figcaption>
+<pre>{{define &#34;subject&#34;}}Welcome to Greenlight!{{end}}
+
+{{define &#34;plainBody&#34;}}
+Hi,
+
+Thanks for signing up for a Greenlight account. We&#39;re excited to have you on board!
+
+For future reference, your user ID number is {{.ID}}.
+
+Thanks,
+
+The Greenlight Team
+{{end}}
+
+{{define &#34;htmlBody&#34;}}
+&lt;!doctype html&gt;
+&lt;html&gt;
+
+&lt;head&gt;
+    &lt;meta name=&#34;viewport&#34; content=&#34;width=device-width&#34; /&gt;
+    &lt;meta http-equiv=&#34;Content-Type&#34; content=&#34;text/html; charset=UTF-8&#34; /&gt;
+&lt;/head&gt;
+
+&lt;body&gt;
+    &lt;p&gt;Hi,&lt;/p&gt;
+    &lt;p&gt;Thanks for signing up for a Greenlight account. We&#39;re excited to have you on board!&lt;/p&gt;
+    &lt;p&gt;For future reference, your user ID number is {{.ID}}.&lt;/p&gt;
+    &lt;p&gt;Thanks,&lt;/p&gt;
+    &lt;p&gt;The Greenlight Team&lt;/p&gt;
+&lt;/body&gt;
+
+&lt;/html&gt;
+{{end}}</pre>
+</figure>
+
+<p>اگر کتاب <em>Let's Go</em> را خوانده باشید، این ساختار و نحو قالب باید بسیار آشنا به نظر برسد و دوباره وارد جزئیات نمی‌شویم. اما به‌طور خلاصه:</p>
+
+<ul>
+<li>سه <em>قالب نام‌گذاری‌شده</em> را با استفاده از تگ‌های <code>{{define &quot;...&quot;}}...{{end}}</code> تعریف کرده‌ایم.</li>
+<li>می‌توانید داده‌های پویا را در این قالب‌ها با استفاده از کاراکتر <code>.</code> (که به آن <em>dot</em> گفته می‌شود) رندر کنید. در فصل بعدی یک ساختار <code>User</code> را به‌عنوان داده پویا به قالب‌ها پاس خواهیم داد، که به این معنی است که می‌توانیم شناسه کاربر را با استفاده از تگ <code>{{.ID}}</code> در قالب‌ها رندر کنیم.</li>
+</ul>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر نیاز دارید متن ایمیل‌ها را به‌طور مکرر تغییر دهید یا آن‌ها را قابل ویرایش توسط کاربر نیاز دارید، ممکن است مناسب باشد این قالب‌ها را به‌عنوان رشته در پایگاه داده ذخیره کنید. اما من متوجه شده‌ام که ذخیره آن‌ها در فایل، مانند آنچه اینجا انجام می‌دهیم، روش کم‌پیچیده‌تری است و نقطه شروع خوبی برای اکثر پروژه‌ها محسوب می‌شود.
+</p></aside>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="13.01-smtp-server-setup.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="13.03-sending-a-welcome-email.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "13.01-smtp-server-setup.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "13.03-sending-a-welcome-email.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

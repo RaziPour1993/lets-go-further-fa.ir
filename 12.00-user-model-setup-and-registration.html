@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی مدل کاربر و ثبت‌نام &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; راه‌اندازی مدل کاربر و ثبت‌نام</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="11.03-executing-the-shutdown.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="12.01-setting-up-the-users-database-table.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۲.</div>
+			<h1 id="user-model-setup-and-registration">راه‌اندازی مدل کاربر و ثبت‌نام</h1>
+
+<p>در بخش‌های آتی این کتاب، تمرکز خود را بر روی <em>کاربران</em> قرار خواهیم داد: ثبت‌نام آن‌ها، فعال‌سازی آن‌ها، احراز هویت آن‌ها و محدود کردن دسترسی به نقاط انتهایی API بر اساس مجوزهایی که دارند.</p>
+
+<p>اما قبل از اینکه بتوانیم این کارها را انجام دهیم، باید مقدماتی را فراهم کنیم. به طور خاص، باید:</p>
+
+<ul>
+<li><p>یک جدول جدید <code>users</code> در PostgreSQL برای ذخیره داده‌های کاربران ایجاد کنیم.</p></li>
+
+<li><p>یک <code>UserModel</code> ایجاد کنیم که شامل کد تعامل با جدول <code>users</code>، اعتبارسنجی داده‌های کاربر و هش کردن رمزهای عبور کاربران باشد.</p></li>
+
+<li><p>یک نقطه انتهایی <code>POST /v1/users</code> توسعه دهیم که بتواند برای ثبت‌نام کاربران جدید در برنامه ما استفاده شود.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="11.03-executing-the-shutdown.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="12.01-setting-up-the-users-database-table.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "11.03-executing-the-shutdown.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "12.01-setting-up-the-users-database-table.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

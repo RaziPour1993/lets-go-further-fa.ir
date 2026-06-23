@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی جدول پایگاه داده کاربران  &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="12.00-user-model-setup-and-registration.html">راه‌اندازی مدل کاربر و ثبت‌نام</a> &rsaquo; راه‌اندازی جدول پایگاه داده کاربران </span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="12.00-user-model-setup-and-registration.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="12.02-setting-up-the-users-model.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۲.۱.</div>
+			<h2 id="setting-up-the-users-database-table">راه‌اندازی جدول پایگاه داده کاربران</h2>
+
+<p>بیایید با ایجاد یک جدول <code>users</code> جدید در پایگاه داده خود شروع کنیم. اگر دنبال می‌کنید، از ابزار <code>migrate</code> برای ایجاد یک جفت فایل migration SQL جدید استفاده کنید:</p>
+
+<figure class="code bash">
+<pre>$ migrate create -seq -ext=.sql -dir=./migrations create_users_table
+<samp>/home/alex/Projects/greenlight/migrations/000004_create_users_table.up.sql
+/home/alex/Projects/greenlight/migrations/000004_create_users_table.down.sql</samp></pre>
+</figure>
+
+<p>و سپس دستورات SQL زیر را به ترتیب به فایل‌های 'up' و 'down' اضافه کنید:</p>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000004_create_users_table.up.sql</figcaption>
+<pre><span class="k">CREATE</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">NOT</span> <span class="k">EXISTS</span> <span class="n">users</span> <span class="p">(</span>
+    <span class="n">id</span> <span class="n">bigserial</span> <span class="k">PRIMARY</span> <span class="k">KEY</span><span class="p">,</span>
+    <span class="n">created_at</span> <span class="k">timestamp</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span> <span class="k">with</span> <span class="n">time</span> <span class="k">zone</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">DEFAULT</span> <span class="n">NOW</span><span class="p">(</span><span class="p">)</span><span class="p">,</span>
+    <span class="n">name</span> <span class="nb">text</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="n">email</span> <span class="n">citext</span> <span class="k">UNIQUE</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="n">password_hash</span> <span class="n">bytea</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="n">activated</span> <span class="n">bool</span> <span class="k">NOT</span> <span class="k">NULL</span><span class="p">,</span>
+    <span class="k">version</span> <span class="nb">integer</span> <span class="k">NOT</span> <span class="k">NULL</span> <span class="k">DEFAULT</span> <span class="mi">1</span>
+<span class="p">)</span><span class="p">;</span></pre>
+</figure>
+
+<figure class="code sql">
+<figcaption>فایل: migrations/000004_create_users_table.down.sql</figcaption>
+<pre><span class="k">DROP</span> <span class="k">TABLE</span> <span class="k">IF</span> <span class="k">EXISTS</span> <span class="n">users</span><span class="p">;</span></pre>
+</figure>
+
+<p>چند نکته جالب درباره این دستور <code>CREATE TABLE</code> وجود دارد که می‌خواهم به سرعت توضیح دهم:</p>
+
+<ol>
+<li><p>ستون <code>email</code> دارای نوع <a href="https://www.postgresql.org/docs/current/citext.html"><code>citext</code></a> (متن حساس به حالت نیست) است. این نوع داده‌های متنی را دقیقاً همانطور که وارد شده ذخیره می‌کند &mdash; بدون تغییر حالت به هیچ وجه &mdash; اما <em>مقایسه‌ها</em> با داده همیشه حساس به حالت نیستند&hellip; از جمله جستجوها در ایندکس‌های مرتبط.</p></li>
+
+<li><p>ما همچنین یک محدودیت <code>UNIQUE</code> روی ستون <code>email</code> داریم. ترکیب با نوع <code>citext</code> به این معنی است که هیچ دو ردیفی در پایگاه داده نمی‌توانند مقدار ایمیل یکسانی داشته باشند &mdash; حتی اگر حالت‌های متفاوتی داشته باشند. این در اصل یک قانون کسب‌وکار در سطح پایگاه داده را اجرا می‌کند که <em>هیچ دو کاربری نباید با آدرس ایمیل یکسان وجود داشته باشند</em>.</p></li>
+
+<li><p>ستون <code>password_hash</code> دارای نوع <a href="https://www.postgresql.org/docs/current/datatype-binary.html"><code>bytea</code></a> (رشته باینری) است. در این ستون ما یک <em>هش یک‌طرفه از رمز عبور کاربر</em> را که با <a href="https://en.wikipedia.org/wiki/Bcrypt">bcrypt</a> تولید شده ذخیره خواهیم کرد &mdash; نه خود رمز عبور را به صورت متن ساده.</p></li>
+
+<li><p>ستون <code>activated</code> یک مقدار بولین را ذخیره می‌کند تا نشان دهد آیا حساب کاربری 'فعال' است یا نه. ما این مقدار را به صورت پیش‌فرض <code>false</code> هنگام ایجاد کاربر جدید تنظیم می‌کنیم و از کاربر می‌خواهیم آدرس ایمیل خود را قبل از تنظیم به <code>true</code> تأیید کند.</p></li>
+
+<li><p>ما همچنین یک ستون شماره <code>version</code> اضافه کرده‌ایم که هر بار یک رکورد کاربر به‌روزرسانی می‌شود آن را افزایش می‌دهیم. این به ما امکان می‌دهد از قفل‌گذاری خوش‌بینانه برای جلوگیری از شرایط مسابقه هنگام به‌روزرسانی رکوردهای کاربر استفاده کنیم، به همان روشی که قبلاً با فیلم‌ها در این کتاب انجام دادیم.</p></li>
+</ol>
+
+<p>خوب، بیایید migration 'up' را اجرا کنیم:</p>
+
+<figure class="code bash">
+<pre>$ migrate -path=./migrations -database=$GREENLIGHT_DB_DSN up
+<samp>4/u create_users_table (62.43511ms)</samp></pre>
+</figure>
+
+<p>و سپس باید بتوانید به پایگاه داده خود متصل شوید و بررسی کنید که جدول <code>users</code> جدید مطابق انتظار ایجاد شده است:</p>
+
+<figure class="code bash">
+<pre>$ psql $GREENLIGHT_DB_DSN 
+<samp>psql (15.4 (Ubuntu 15.4-1.pgdg22.04+1))
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, bits: 256, compression: off)
+Type &#34;help&#34; for help.</samp>
+
+greenlight=&gt; \d users
+<samp>                                          Table &#34;public.users&#34;
+    Column     |            Type             | Collation | Nullable |              Default              
+---------------+-----------------------------+-----------+----------+-----------------------------------
+ id            | bigint                      |           | not null | nextval(&#39;users_id_seq&#39;::regclass)
+ created_at    | timestamp(0) with time zone |           | not null | now()
+ name          | text                        |           | not null | 
+ email         | citext                      |           | not null | 
+ password_hash | bytea                       |           | not null | 
+ activated     | boolean                     |           | not null | 
+ version       | integer                     |           | not null | 1
+Indexes:
+    &#34;users_pkey&#34; PRIMARY KEY, btree (id)
+    &#34;users_email_key&#34; UNIQUE CONSTRAINT, btree (email)</samp></pre>
+</figure>
+
+<p>یک نکته مهم برای اشاره در اینجا: محدودیت <code>UNIQUE</code> روی ستون <code>email</code> ما به صورت خودکار نام <code>users_email_key</code> را دریافت کرده است. این در فصل بعدی مهم خواهد شد، زمانی که نیاز داریم هرگونه خطا ناشی از ثبت‌نام مجدد کاربر با آدرس ایمیل یکسان را مدیریت کنیم.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="12.00-user-model-setup-and-registration.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="12.02-setting-up-the-users-model.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "12.00-user-model-setup-and-registration.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "12.02-setting-up-the-users-model.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

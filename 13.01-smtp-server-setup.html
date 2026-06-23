@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>راه‌اندازی سرور SMTP &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="13.00-sending-emails.html">ارسال ایمیل</a> &rsaquo; راه‌اندازی سرور SMTP</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="13.00-sending-emails.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="13.02-creating-email-templates.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۳.۱.</div>
+			<h2 id="smtp-server-setup">راه‌اندازی سرور SMTP</h2>
+
+<p>برای توسعه قابلیت ارسال ایمیل، به دسترسی به یک سرور SMTP (Simple Mail Transfer Protocol) نیاز داریم که بتوانیم با خیال راحت از آن برای اهداف آزمایشی استفاده کنیم.</p>
+
+<p>تعداد زیادی ارائه‌دهنده سرویس SMTP (مانند Postmark، Sendgrid یا Amazon SES) وجود دارند که <em>می‌توانیم</em> از آنها برای ارسال ایمیل‌هایمان استفاده کنیم &mdash; یا حتی می‌توانید سرور SMTP خودتان را نصب و راه‌اندازی کنید. اما در این کتاب قرار است از <a href="https://mailtrap.io/">Mailtrap</a> استفاده کنیم.</p>
+
+<p>دلیل استفاده از Mailtrap این است که سرویس تخصصی برای <em>ارسال ایمیل در حین توسعه و آزمایش</em> است. اساساً، تمام ایمیل‌ها را به یک صندوق ورودی که شما به آن دسترسی دارید تحویل می‌دهد، به جای ارسال آنها به گیرنده واقعی.</p>
+
+<p>من وابستگی به این شرکت ندارم &mdash; فقط معتقدم که این سرویس خوب کار می‌کند و استفاده از آن ساده است. آنها همچنین یک طرح &lsquo;رایگان برای همیشه&rsquo; ارائه می‌دهند که برای هر کسی که با این کتاب کدنویسی می‌کند کافی باشد.</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اگر قبلاً سرور SMTP خودتان را دارید، یا ارائه‌دهنده SMTP جایگزینی می‌خواهید به جای آن استفاده کنید، این کاملاً خوب است. لطفاً به فصل بعدی بروید.
+</p></aside>
+
+<h3 id="setting-up-mailtrap">راه‌اندازی Mailtrap</h3>
+
+<p>برای راه‌اندازی حساب Mailtrap، به <a href="https://mailtrap.io/register/signup">صفحه ثبت‌نام</a> بروید که در آن می‌توانید با استفاده از آدرس ایمیل یا حساب‌های Google یا GitHub خود (اگر دارید) ثبت‌نام کنید.</p>
+
+<p>پس از ثبت‌نام و ورود، از منو برای پیمایش به <strong>Testing › Inboxes</strong> استفاده کنید. باید صفحه‌ای را ببینید که صندوق‌های ورودی موجود شما را فهرست می‌کند، مشابه اسکرین‌شات زیر.</p>
+
+<figure class="img">
+<img src="assets/img/13.01-01.png" alt="13.01-01.png" />
+</figure>
+
+<p>هر حساب Mailtrap با یک صندوق ورودی رایگان همراه است که به طور پیش‌فرض <strong>Demo inbox</strong> نام دارد. اگر می‌خواهید می‌توانید با کلیک روی آیکون مداد در زیر <strong>Actions</strong> نام را تغییر دهید.</p>
+
+<p>اگر روی آن صندوق ورودی کلیک کنید، باید ببینید که در حال حاضر خالی است و هیچ ایمیلی ندارد، مشابه این:</p>
+
+<figure class="img">
+<img src="assets/img/13.01-02.png" alt="13.01-02.png" />
+</figure>
+
+<p>هر صندوق ورودی مجموعه اعتبارنامه‌های SMTP خود را دارد که می‌توانید با کلیک روی لینک <strong>Show Credentials</strong> (که در اسکرین‌شات بالا با کادر قرمز مشخص شده است) آنها را نمایش دهید. این باعث می‌شود اعتبارنامه‌های SMTP صندوق ورودی نمایش داده شوند، مشابه اسکرین‌شات زیر.</p>
+
+<figure class="img">
+<img src="assets/img/13.01-03.png" alt="13.01-03.png" />
+</figure>
+
+<p>اساساً، هر ایمیلی که با استفاده از این اعتبارنامه‌های SMTP ارسال می‌کنید، به جای ارسال به گیرنده واقعی، در این صندوق ورودی قرار می‌گیرد.</p>
+
+<p>اگر در حال پیگیری هستید، اعتبارنامه‌های نمایش داده شده روی صفحه خود را یادداشت کنید (یا فقط تب مرورگر را باز نگه دارید) &mdash; به آنها در فصل بعدی نیاز خواهید داشت.</p>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> اعتبارنامه‌های در اسکرین‌شات بالا بازنشانی شده‌اند و دیگر معتبر نیستند، بنابراین لطفاً سعی نکنید از آنها استفاده کنید!
+</p></aside>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="13.00-sending-emails.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="13.02-creating-email-templates.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "13.00-sending-emails.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "13.02-creating-email-templates.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>ارسال ایمیل‌ها &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+						
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; ارسال ایمیل‌ها</span>
+						
+					
+				</div>
+				<div>
+					&lsaquo; <a href="12.03-registering-a-user.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="13.01-smtp-server-setup.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۱۳.</div>
+			<h1 id="sending-emails">ارسال ایمیل‌ها</h1>
+
+<p>در این بخش از کتاب، قصد داریم تعامل‌پذیری را به API خود اضافه کنیم و handler ثبت‌نام کاربر (<code>registerUserHandler</code>) را به گونه‌ای تطبیق دهیم که پس از ثبت‌نام موفق کاربر، یک ایمیل خوش‌آمدگویی برای او ارسال شود.</p>
+
+<p>در این فرآیند، چند موضوع جالب را پوشش خواهیم داد. شما یاد خواهید گرفت:</p>
+
+<ul>
+<li><p>چگونه از سرویس SMTP <a href="https://mailtrap.io/">Mailtrap</a> برای ارسال و نظارت بر ایمیل‌های آزمایشی در حین توسعه استفاده کنید.</p></li>
+
+<li><p>چگونه از پکیج <code>html/template</code> و قابلیت <em>فایل‌های تعبیه‌شده</em> Go برای ایجاد قالب‌های پویا و آسان‌مدیریت برای محتوای ایمیل خود استفاده کنید.</p></li>
+
+<li><p>چگونه یک پکیج قابل استفاده مجدد <code>internal/mailer</code> برای ارسال ایمیل از برنامه خود ایجاد کنید.</p></li>
+
+<li><p>چگونه الگویی برای ارسال ایمیل‌ها در goroutine‌های پس‌زمینه پیاده‌سازی کنید و چگونه در حین خاموش‌شدن صحیح (graceful shutdown) منتظر تکمیل آنها بمانید.</p></li>
+</ul>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="12.03-registering-a-user.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="13.01-smtp-server-setup.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "12.03-registering-a-user.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "13.01-smtp-server-setup.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
