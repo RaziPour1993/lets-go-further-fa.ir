@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>حذف یک فیلم &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="07.00-crud-operations.html">عملیات CRUD</a> &rsaquo; حذف یک فیلم</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="07.04-updating-a-movie.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="08.00-advanced-crud-operations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل 7.5.</div>
+			<h2 id="deleting-a-movie">حذف یک فیلم</h2>
+
+<p>در این فصل، آخرین نقطه پایانی CRUD را اضافه خواهیم کرد تا یک کلاینت بتواند <em>یک فیلم مشخص را از سیستم ما حذف کند</em>.</p>
+
+<table>
+<thead>
+<tr>
+<th>عملیات</th>
+<th>هندلر</th>
+<th>الگوی URL</th>
+<th>متد</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td>نمایش اطلاعات برنامه</td>
+<td>healthcheckHandler</td>
+<td>/v1/healthcheck</td>
+<td>GET</td>
+</tr>
+
+<tr>
+<td>ایجاد یک فیلم جدید</td>
+<td>createMovieHandler</td>
+<td>/v1/movies</td>
+<td>POST</td>
+</tr>
+
+<tr>
+<td>نمایش جزئیات یک فیلم مشخص</td>
+<td>showMovieHandler</td>
+<td>/v1/movies/:id</td>
+<td>GET</td>
+</tr>
+
+<tr>
+<td>به‌روزرسانی جزئیات یک فیلم مشخص</td>
+<td>updateMovieHandler</td>
+<td>/v1/movies/:id</td>
+<td>PUT</td>
+</tr>
+
+<tr>
+<td><strong>حذف یک فیلم مشخص</strong></td>
+<td><strong>deleteMovieHandler</strong></td>
+<td><strong>/v1/movies/:id</strong></td>
+<td><strong>DELETE</strong></td>
+</tr>
+</tbody>
+</table>
+<p>در مقایسه با سایر نقاط پایانی در API ما، رفتاری که می‌خواهیم در اینجا پیاده‌سازی کنیم کاملاً ساده است.</p>
+
+<ul>
+<li>اگر فیلمی با <code>id</code> مشخص‌شده در URL در پایگاه داده وجود داشته باشد، می‌خواهیم رکورد مربوطه را حذف کرده و یک پیام موفقیت به کلاینت برگردانیم.</li>
+<li>اگر فیلم با آن <code>id</code> وجود نداشته باشد، می‌خواهیم یک پاسخ <code>404 Not Found</code> به کلاینت برگردانیم.</li>
+</ul>
+
+<p>کوئری SQL برای حذف رکورد در پایگاه داده ما نیز ساده است:</p>
+
+<figure class="code plain">
+<pre>DELETE FROM movies
+WHERE id = $1</pre>
+</figure>
+
+<p>در اینجا کوئری SQL هیچ ردیفی برنمی‌گرداند، بنابراین استفاده از متد <a href="https://golang.org/pkg/database/sql/#DB.Exec"><code>Exec()</code></a> زبان Go برای اجرای آن مناسب است.</p>
+
+<p>یکی از نکات خوب متد <code>Exec()</code> این است که یک مقدار <a href="https://golang.org/pkg/database/sql/#Result"><code>sql.Result</code></a> برمی‌گرداند که حاوی اطلاعاتی درباره <em>تعداد ردیف‌هایی است که کوئری تحت تأثیر قرار داده است</em>. در سناریوی ما، این اطلاعات واقعاً مفید است.</p>
+
+<ul>
+<li>اگر تعداد ردیف‌های تحت تأثیر <code>1</code> باشد، می‌دانیم که فیلم در جدول وجود داشته و اکنون حذف شده است... پس می‌توانیم یک پیام موفقیت به کلاینت ارسال کنیم.</li>
+<li>در مقابل، اگر تعداد ردیف‌های تحت تأثیر <code>0</code> باشد، می‌دانیم که هیچ فیلمی با آن <code>id</code> در لحظه تلاش برای حذف وجود نداشته است و می‌توانیم یک پاسخ <code>404 Not Found</code> به کلاینت ارسال کنیم.</li>
+</ul>
+
+<h3 id="adding-the-new-endpoint">افزودن نقطه پایانی جدید</h3>
+
+<p>بیایید متد <code>Delete()</code> در مدل پایگاه داده خود را به‌روزرسانی کنیم. در اصل، می‌خواهیم این متد کوئری SQL بالا را اجرا کند و در صورتی که تعداد ردیف‌های تحت تأثیر <code>0</code> باشد، خطای <code>ErrRecordNotFound</code> برگرداند. به این صورت:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Delete</span><span class="p">(</span><span class="nx">id</span> <span class="kt">int64</span><span class="p">)</span> <span class="kt">error</span> <span class="p">{</span>
+    <span class="c1">// Return an ErrRecordNotFound error if the movie ID is less than 1.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">id</span> <span class="p">&lt;</span> <span class="mi">1</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Construct the SQL query to delete the record.
+</span><span class="c1"></span>    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        DELETE FROM movies
+</span><span class="s">        WHERE id = $1</span><span class="s">`</span>
+
+    <span class="c1">// Execute the SQL query using the Exec() method, passing in the id variable as
+</span><span class="c1"></span>    <span class="c1">// the value for the placeholder parameter. The Exec() method returns a sql.Result
+</span><span class="c1"></span>    <span class="c1">// value.
+</span><span class="c1"></span>    <span class="nx">result</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">Exec</span><span class="p">(</span><span class="nx">query</span><span class="p">,</span> <span class="nx">id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">err</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Call the RowsAffected() method on the sql.Result value to get the number of rows
+</span><span class="c1"></span>    <span class="c1">// affected by the query.
+</span><span class="c1"></span>    <span class="nx">rowsAffected</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">result</span><span class="p">.</span><span class="nf">RowsAffected</span><span class="p">(</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">err</span>
+    <span class="p">}</span>
+
+    <span class="c1">// If no rows were affected, we know that the movies table didn&#39;t contain a record
+</span><span class="c1"></span>    <span class="c1">// with the provided ID at the moment we tried to delete it. In that case we 
+</span><span class="c1"></span>    <span class="c1">// return an ErrRecordNotFound error.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">rowsAffected</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="kc">nil</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>پس از اتمام این کار، بیایید به فایل <code>cmd/api/movies.go</code> برویم و یک متد جدید <code>deleteMovieHandler</code> اضافه کنیم. در این متد باید شناسه فیلم را از URL درخواست بخوانیم، متد <code>Delete()</code> که همین الان ساختیم را فراخوانی کنیم و &mdash; بر اساس مقدار برگشتی از <code>Delete()</code> &mdash; پاسخ مناسب را به کلاینت ارسال کنیم.</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">deleteMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// Extract the movie ID from the URL.
+</span><span class="c1"></span>    <span class="nx">id</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readIDParam</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Delete the movie from the database, sending a 404 Not Found response to the
+</span><span class="c1"></span>    <span class="c1">// client if there isn&#39;t a matching record.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nx">models</span><span class="p">.</span><span class="nx">Movies</span><span class="p">.</span><span class="nf">Delete</span><span class="p">(</span><span class="nx">id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">data</span><span class="p">.</span><span class="nx">ErrRecordNotFound</span><span class="p">)</span><span class="p">:</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Return a 200 OK status code along with a success message.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusOK</span><span class="p">,</span> <span class="nx">envelope</span><span class="p">{</span><span class="s">&#34;message&#34;</span><span class="p">:</span> <span class="s">&#34;movie successfully deleted&#34;</span><span class="p">}</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> ممکن است ترجیح دهید در اجا یک بدنه پاسخ خالی و کد وضعیت <code>204 No Content</code> ارسال کنید، به جای پیام <code>&quot;movie successfully deleted&quot;</code>. این واقعاً به این بستگی دارد که کلاینت‌های شما چه کسانی هستند &mdash; اگر انسان‌ها هستند، ارسال پیامی مشابه مثال بالا یک نکته مثبت UX است؛ اگر ماشین‌ها هستند، یک پاسخ <code>204 No Content</code> احتمالاً کافی است.
+</p></aside>
+
+<p>در نهایت، باید مسیر جدید را در فایل <code>cmd/api/routes.go</code> خود متصل کنیم:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPut</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">updateMovieHandler</span><span class="p">)</span>
+    <span class="c1">// Add the route for the DELETE /v1/movies/:id endpoint.
+</span><span class="c1"></span>    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodDelete</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">deleteMovieHandler</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">router</span><span class="p">)</span>
+<span class="p">}</span>
+</pre>
+</figure>
+
+<p>بسیار خب، بیایید API را مجدداً راه‌اندازی کنیم و این را با حذف فیلم <em>Deadpool</em> از پایگاه داده فیلم‌هایمان آزمایش کنیم (اگر همراه ما بودید، این فیلم باید شناسه <code>3</code> داشته باشد). عملیات حذف باید بدون هیچ مشکلی کار کند و باید پیام تأیید را به این صورت دریافت کنید:</p>
+
+<figure class="code bash">
+<pre>$ curl -X DELETE localhost:4000/v1/movies/3
+<samp>{
+    &#34;message&#34;: &#34;movie successfully deleted&#34;
+}</samp>
+</pre>
+</figure>
+
+<p>اگر درخواست حذف یکسانی برای فیلمی که قبلاً حذف شده تکرار کنید، اکنون باید یک پاسخ <code>404 Not Found</code> و پیام خطا دریافت کنید. مشابه این:</p>
+
+<figure class="code bash">
+<pre>$ curl -X DELETE localhost:4000/v1/movies/3
+<samp>{
+    &#34;error&#34;: &#34;the requested resource could not be found&#34;
+}</samp></pre>
+</figure>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="07.04-updating-a-movie.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="08.00-advanced-crud-operations.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "07.04-updating-a-movie.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "08.00-advanced-crud-operations.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

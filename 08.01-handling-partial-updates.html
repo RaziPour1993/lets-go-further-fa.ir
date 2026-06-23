@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>مدیریت به‌روزرسانی‌های جزئی &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="08.00-advanced-crud-operations.html">عملیات پیشرفته CRUD</a> &rsaquo; مدیریت به‌روزرسانی‌های جزئی</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="08.00-advanced-crud-operations.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="08.02-optimistic-concurrency-control.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل 8.1.</div>
+			<h2 id="handling-partial-updates">مدیریت به‌روزرسانی‌های جزئی</h2>
+
+<p>در این فصل قصد داریم رفتار <code>updateMovieHandler</code> را تغییر دهیم تا از <em>به‌روزرسانی‌های جزئی</em> رکوردهای فیلم پشتیبانی کند. از نظر مفهومی این کار کمی پیچیده‌تر از <em>جایگزینی کامل</em> است، به همین دلیل ابتدا پایه و اساس کار را با آن روش فراهم کردیم.</p>
+
+<p>به عنوان مثال، فرض کنید متوجه شده‌ایم که سال اکران <em>The Breakfast Club</em> در پایگاه داده ما نادرست است (در واقع باید ۱۹۸۵ باشد، نه ۱۹۸۶). خوب بود اگر می‌توانستیم یک درخواست JSON ارسال کنیم که فقط شامل تغییری باشد که باید اعمال شود، به جای کل اطلاعات فیلم، به این صورت:</p>
+
+<figure class="code plain">
+<pre>{&#34;year&#34;: 1985}</pre>
+</figure>
+
+<p>بیایید سریعاً بررسی کنیم که اگر الان این درخواست را ارسال کنیم چه اتفاقی می‌افتد:</p>
+
+<figure class="code bash">
+<pre>$ curl -X PUT -d &#39;{&#34;year&#34;: 1985}&#39; localhost:4000/v1/movies/4
+<samp>{
+    &#34;error&#34;: {
+        &#34;genres&#34;: &#34;must be provided&#34;,
+        &#34;runtime&#34;: &#34;must be provided&#34;,
+        &#34;title&#34;: &#34;must be provided&#34;
+    }
+}</samp></pre>
+</figure>
+
+<p>همان‌طور که قبلاً در کتاب اشاره کردیم، هنگام رمزگشایی بدنه درخواست، هر فیلدی در ساختار <code>input</code> ما که جفت کلید-مقدار متناظری در JSON نداشته باشد، <a href="https://golang.org/ref/spec#The_zero_value">مقدار صفر</a> خود را حفظ می‌کند. ما در مرحله اعتبارسنجی این مقادیر صفر را بررسی می‌کنیم و پیام‌های خطایی که در بالا می‌بینید را برمی‌گردانیم.</p>
+
+<p>در زمینه به‌روزرسانی جزئی، این موضوع مشکل ایجاد می‌کند. چگونه تفاوت بین این موارد را تشخیص دهیم:</p>
+
+<ul>
+<li>یک کلاینت <em>جفت کلید-مقداری با مقدار صفر ارائه می‌دهد</em> &mdash; مانند <code>{&quot;title&quot;: &quot;&quot;}</code> &mdash; که در این صورت می‌خواهیم خطای اعتبارسنجی برگردانیم.</li>
+<li>یک کلاینت <em>اصلاً جفت کلید-مقداری ارائه نمی‌دهد</em> در JSON خود &mdash; که در این صورت می‌خواهیم به‌روزرسانی فیلد را &lsquo;رد&rsquo; کنیم اما خطای اعتبارسنجی ارسال نکنیم.</li>
+</ul>
+
+<p>برای کمک به پاسخ به این سؤال، بیایید سریعاً مقادیر صفر برای انواع مختلف Go را مرور کنیم.</p>
+
+<table>
+<thead>
+<tr>
+<th>نوع Go</th>
+<th>مقدار صفر</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td><code>int*</code>, <code>uint*</code>, <code>float*</code>, <code>complex</code></td>
+<td><code>0</code></td>
+</tr>
+
+<tr>
+<td><code>string</code></td>
+<td><code>&quot;&quot;</code></td>
+</tr>
+
+<tr>
+<td><code>bool</code></td>
+<td><code>false</code></td>
+</tr>
+
+<tr>
+<td><code>func</code>, <code>array</code>, <code>slice</code>, <code>map</code>, <code>chan</code> و <strong>اشاره‌گرها</strong></td>
+<td><code>nil</code></td>
+</tr>
+</tbody>
+</table>
+<p>نکته کلیدی که باید توجه کنید این است که <em>اشاره‌گرها مقدار صفر <code>nil</code> دارند</em>.</p>
+
+<p>بنابراین &mdash; از نظر تئوری &mdash; می‌توانیم فیلدهای ساختار <code>input</code> خود را به اشاره‌گر تغییر دهیم. سپس برای بررسی اینکه آیا کلاینت جفت کلید-مقدار خاصی در JSON ارائه داده است یا خیر، می‌توانیم به سادگی بررسی کنیم که آیا فیلد متناظر در ساختار <code>input</code> برابر با <code>nil</code> است یا خیر.</p>
+
+<figure class="code go">
+<pre><span class="c1">// Use pointers for the Title, Year and Runtime fields.
+</span><span class="c1"></span><span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+    <span class="nx">Title</span>   <span class="o">*</span><span class="kt">string</span>       <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>   <span class="c1">// This will be nil if there is no corresponding key in the JSON.
+</span><span class="c1"></span>    <span class="nx">Year</span>    <span class="o">*</span><span class="kt">int32</span>        <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>    <span class="c1">// Likewise...
+</span><span class="c1"></span>    <span class="nx">Runtime</span> <span class="o">*</span><span class="nx">data</span><span class="p">.</span><span class="nx">Runtime</span> <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span> <span class="c1">// Likewise...
+</span><span class="c1"></span>    <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span>      <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>  <span class="c1">// We don&#39;t need to change this because slices already have the zero value nil.
+</span><span class="c1"></span><span class="p">}</span></pre>
+</figure>
+
+<h3 id="performing-the-partial-update">انجام به‌روزرسانی جزئی</h3>
+
+<p>بیایید این را عملی کنیم و متد <code>updateMovieHandler</code> خود را ویرایش کنیم تا از به‌روزرسانی‌های جزئی به صورت زیر پشتیبانی کند:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">updateMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">id</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readIDParam</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Retrieve the movie record as normal.
+</span><span class="c1"></span>    <span class="nx">movie</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nx">models</span><span class="p">.</span><span class="nx">Movies</span><span class="p">.</span><span class="nf">Get</span><span class="p">(</span><span class="nx">id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">data</span><span class="p">.</span><span class="nx">ErrRecordNotFound</span><span class="p">)</span><span class="p">:</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Use pointers for the Title, Year and Runtime fields.
+</span><span class="c1"></span>    <span class="kd">var</span> <span class="nx">input</span> <span class="kd">struct</span> <span class="p">{</span>
+        <span class="nx">Title</span>   <span class="o">*</span><span class="kt">string</span>       <span class="s">`</span><span class="s">json:&#34;title&#34;</span><span class="s">`</span>
+        <span class="nx">Year</span>    <span class="o">*</span><span class="kt">int32</span>        <span class="s">`</span><span class="s">json:&#34;year&#34;</span><span class="s">`</span>
+        <span class="nx">Runtime</span> <span class="o">*</span><span class="nx">data</span><span class="p">.</span><span class="nx">Runtime</span> <span class="s">`</span><span class="s">json:&#34;runtime&#34;</span><span class="s">`</span>
+        <span class="nx">Genres</span>  <span class="p">[</span><span class="p">]</span><span class="kt">string</span>      <span class="s">`</span><span class="s">json:&#34;genres&#34;</span><span class="s">`</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Decode the JSON as normal.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">input</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">badRequestResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// If the input.Title value is nil, then we know that no corresponding &#34;title&#34; 
+</span><span class="c1"></span>    <span class="c1">// key-value pair was provided in the JSON request body. So we move on and leave the 
+</span><span class="c1"></span>    <span class="c1">// movie record unchanged. Otherwise, we update the movie record with the new title
+</span><span class="c1"></span>    <span class="c1">// value. Importantly, because input.Title is now a pointer to a string, we need 
+</span><span class="c1"></span>    <span class="c1">// to dereference the pointer using the * operator to get the underlying value
+</span><span class="c1"></span>    <span class="c1">// before assigning it to our movie record.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Title</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span> <span class="p">=</span> <span class="o">*</span><span class="nx">input</span><span class="p">.</span><span class="nx">Title</span>
+    <span class="p">}</span>
+
+    <span class="c1">// We also do the same for the other fields in the input struct.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Year</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span> <span class="p">=</span> <span class="o">*</span><span class="nx">input</span><span class="p">.</span><span class="nx">Year</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Runtime</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span> <span class="p">=</span> <span class="o">*</span><span class="nx">input</span><span class="p">.</span><span class="nx">Runtime</span>
+    <span class="p">}</span>
+    <span class="k">if</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span> <span class="p">=</span> <span class="nx">input</span><span class="p">.</span><span class="nx">Genres</span> <span class="c1">// Note that we don&#39;t need to dereference a slice.
+</span><span class="c1"></span>    <span class="p">}</span>
+
+    <span class="nx">v</span> <span class="o">:=</span> <span class="nx">validator</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="nx">data</span><span class="p">.</span><span class="nf">ValidateMovie</span><span class="p">(</span><span class="nx">v</span><span class="p">,</span> <span class="nx">movie</span><span class="p">)</span><span class="p">;</span> <span class="p">!</span><span class="nx">v</span><span class="p">.</span><span class="nf">Valid</span><span class="p">(</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">failedValidationResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">v</span><span class="p">.</span><span class="nx">Errors</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nx">models</span><span class="p">.</span><span class="nx">Movies</span><span class="p">.</span><span class="nf">Update</span><span class="p">(</span><span class="nx">movie</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusOK</span><span class="p">,</span> <span class="nx">envelope</span><span class="p">{</span><span class="s">&#34;movie&#34;</span><span class="p">:</span> <span class="nx">movie</span><span class="p">}</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>خلاصه این تغییرات این است: ما ساختار <code>input</code> خود را طوری تغییر دادیم که تمام فیلدها حالا مقدار صفر <code>nil</code> دارند. پس از پردازش درخواست JSON، فیلدهای ساختار <code>input</code> را بررسی می‌کنیم و فقط در صورتی که مقدار جدید <em>نباشد</em> <code>nil</code>، رکورد فیلم را به‌روزرسانی می‌کنیم.</p>
+
+<p>علاوه بر این، برای endpointهای API که <em>به‌روزرسانی‌های جزئی</em> روی یک منبع انجام می‌دهند، مناسب است از متد HTTP <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/PATCH"><code>PATCH</code></a> به جای <code>PUT</code> استفاده شود (که برای جایگزینی کامل یک منبع در نظر گرفته شده است).</p>
+
+<p>بنابراین، قبل از اینکه کد جدید خود را آزمایش کنیم، بیایید سریعاً فایل <code>cmd/api/routes.go</code> خود را به‌روزرسانی کنیم تا <code>updateMovieHandler</code> ما فقط برای درخواست‌های <code>PATCH</code> استفاده شود.</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/routes.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">routes</span><span class="p">(</span><span class="p">)</span> <span class="nx">http</span><span class="p">.</span><span class="nx">Handler</span> <span class="p">{</span>
+    <span class="nx">router</span> <span class="o">:=</span> <span class="nx">httprouter</span><span class="p">.</span><span class="nf">New</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nx">NotFound</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">notFoundResponse</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nx">MethodNotAllowed</span> <span class="p">=</span> <span class="nx">http</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">app</span><span class="p">.</span><span class="nx">methodNotAllowedResponse</span><span class="p">)</span>
+
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/healthcheck&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">healthcheckHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPost</span><span class="p">,</span> <span class="s">&#34;/v1/movies&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">createMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodGet</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">showMovieHandler</span><span class="p">)</span>
+    <span class="c1">// Require a PATCH request, rather than PUT.
+</span><span class="c1"></span>    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodPatch</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">updateMovieHandler</span><span class="p">)</span>
+    <span class="nx">router</span><span class="p">.</span><span class="nf">HandlerFunc</span><span class="p">(</span><span class="nx">http</span><span class="p">.</span><span class="nx">MethodDelete</span><span class="p">,</span> <span class="s">&#34;/v1/movies/:id&#34;</span><span class="p">,</span> <span class="nx">app</span><span class="p">.</span><span class="nx">deleteMovieHandler</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="nx">app</span><span class="p">.</span><span class="nf">recoverPanic</span><span class="p">(</span><span class="nx">router</span><span class="p">)</span>
+<span class="p">}</span></pre>
+</figure>
+
+<h3 id="demonstration">نمایش عملی</h3>
+
+<p>با راه‌اندازی کامل این موارد، بیایید بررسی کنیم که عملکرد به‌روزرسانی جزئی با اصلاح سال اکران <em>The Breakfast Club</em> به ۱۹۸۵ کار می‌کند. به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl -X PATCH -d &#39;{&#34;year&#34;: 1985}&#39; localhost:4000/v1/movies/4
+<samp>{
+    &#34;movie&#34;: {
+        &#34;id&#34;: 4,
+        &#34;title&#34;: &#34;The Breakfast Club&#34;,
+        &#34;year&#34;: 1985,
+        &#34;runtime&#34;: &#34;96 mins&#34;,
+        &#34;genres&#34;: [
+            &#34;drama&#34;
+        ],
+        &#34;version&#34;: 2
+    }
+}</samp></pre>
+</figure>
+
+<p>باز هم، این نتیجه خوبی است. می‌توانیم ببینیم که مقدار <code>year</code> به درستی به‌روزرسانی شده و شماره <code>version</code> افزایش یافته است، اما هیچ‌یک از فیلدهای داده دیگر تغییر نکرده‌اند.</p>
+
+<p>بیایید همچنین سریعاً همان درخواست را با شامل کردن یک مقدار خالی <code>title</code> امتحان کنیم. در این صورت به‌روزرسانی مسدود می‌شود و باید خطای اعتبارسنجی دریافت کنید، به این صورت:</p>
+
+<figure class="code bash">
+<pre>$ curl -X PATCH -d &#39;{&#34;year&#34;: 1985, &#34;title&#34;: &#34;&#34;}&#39; localhost:4000/v1/movies/4
+<samp>{
+    &#34;error&#34;: {
+        &#34;title&#34;: &#34;must be provided&#34;
+    }
+}</samp></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="null-values-in-json">مقادیر null در JSON</h4>
+
+<p>یک حالت خاص که باید از آن آگاه باشید زمانی است که کلاینت <em>به صورت صریح فیلدی در درخواست JSON با مقدار <code>null</code> ارائه می‌دهد</em>. در این صورت، هندلر ما آن فیلد را نادیده می‌گیرد و آن را مانند زمانی که ارائه نشده رفتار می‌کند.</p>
+
+<p>به عنوان مثال، درخواست زیر هیچ تغییری در رکورد فیلم ایجاد نمی‌کند (به جز افزایش شماره <code>version</code>):</p>
+
+<figure class="code bash">
+<pre>$ curl -X PATCH -d &#39;{&#34;title&#34;: null, &#34;year&#34;: null}&#39; localhost:4000/v1/movies/4
+<samp>{
+    &#34;movie&#34;: {
+        &#34;id&#34;: 4,
+        &#34;title&#34;: &#34;The Breakfast Club&#34;,
+        &#34;year&#34;: 1985,
+        &#34;runtime&#34;: &#34;96 mins&#34;,
+        &#34;genres&#34;: [
+            &#34;drama&#34;
+        ],
+        &#34;version&#34;: 3
+    }
+}</samp></pre>
+</figure>
+
+<p>در یک دنیای ایده‌آل، این نوع درخواست باید نوعی خطای اعتبارسنجی برگرداند. اما &mdash; مگر اینکه تحلیلگر JSON سفارشی خود را بنویسید &mdash; هیچ راهی برای تشخیص تفاوت بین عدم ارائه جفت کلید-مقدار توسط کلاینت در JSON، یا ارائه آن با مقدار <code>null</code> وجود ندارد.</p>
+
+<p>در بیشتر موارد، احتمالاً توضیح این رفتار حالت خاص در مستندات کلاینت برای endpoint کافی است و چیزی شبیه به <em>&ldquo;آیتم‌های JSON با مقادیر <code>null</code> نادیده گرفته می‌شوند و بدون تغییر باقی می‌مانند&rdquo;</em> گفته شود.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="08.00-advanced-crud-operations.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="08.02-optimistic-concurrency-control.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "08.00-advanced-crud-operations.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "08.02-optimistic-concurrency-control.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

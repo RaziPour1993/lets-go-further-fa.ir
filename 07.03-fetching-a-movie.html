@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>دریافت یک فیلم &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="07.00-crud-operations.html">عملیات CRUD</a> &rsaquo; دریافت یک فیلم</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="07.02-creating-a-new-movie.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="07.04-updating-a-movie.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل ۷.۳.</div>
+			<h2 id="fetching-a-movie">دریافت یک فیلم</h2>
+
+<p>حال بیایید به سراغ کد <em>دریافت و نمایش داده‌های یک فیلم خاص</em> برویم.</p>
+
+<p>همانند قبل، از مدل پایگاه داده شروع می‌کنیم و ابتدا متد <code>Get()</code> را به‌روزرسانی می‌کنیم تا کوئری SQL زیر را اجرا کند:</p>
+
+<figure class="code plain">
+<pre>SELECT id, created_at, title, year, runtime, genres, version
+FROM movies
+WHERE id = $1</pre>
+</figure>
+
+<p>از آنجایی که جدول <code>movies</code> ما از ستون <code>id</code> به‌عنوان کلید اصلی استفاده می‌کند، این کوئری فقط دقیقاً یک ردیف از پایگاه داده را برمی‌گرداند (یا هیچ ردیفی برنمی‌گرداند). بنابراین، مناسب است که این کوئری را با استفاده از متد <code>QueryRow()</code> Go اجرا کنیم.</p>
+
+<p>اگر می‌خواهید همراه با ما پیش بروید، فایل <code>internal/data/movies.go</code> خود را باز کنید و آن را به صورت زیر به‌روزرسانی کنید:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;database/sql&#34;</span>
+    <span class="s">&#34;errors&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;time&#34;</span>
+    
+    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span>
+
+    <span class="s">&#34;github.com/lib/pq&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Get</span><span class="p">(</span><span class="nx">id</span> <span class="kt">int64</span><span class="p">)</span> <span class="p">(</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// The PostgreSQL bigserial type that we&#39;re using for the movie ID starts
+</span><span class="c1"></span>    <span class="c1">// auto-incrementing at 1 by default, so we know that no movies will have ID values
+</span><span class="c1"></span>    <span class="c1">// less than that. To avoid making an unnecessary database call, we take a shortcut
+</span><span class="c1"></span>    <span class="c1">// and return an ErrRecordNotFound error straight away.
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">id</span> <span class="p">&lt;</span> <span class="mi">1</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Define the SQL query for retrieving the movie data.
+</span><span class="c1"></span>    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        SELECT id, created_at, title, year, runtime, genres, version
+</span><span class="s">        FROM movies
+</span><span class="s">        WHERE id = $1</span><span class="s">`</span>
+
+    <span class="c1">// Declare a Movie struct to hold the data returned by the query.
+</span><span class="c1"></span>    <span class="kd">var</span> <span class="nx">movie</span> <span class="nx">Movie</span>
+
+    <span class="c1">// Execute the query using the QueryRow() method, passing in the provided id value  
+</span><span class="c1"></span>    <span class="c1">// as a placeholder parameter, and scan the response data into the fields of the 
+</span><span class="c1"></span>    <span class="c1">// Movie struct. Importantly, note that we need to convert the scan target for the 
+</span><span class="c1"></span>    <span class="c1">// genres column using the pq.Array() adapter function again.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryRow</span><span class="p">(</span><span class="nx">query</span><span class="p">,</span> <span class="nx">id</span><span class="p">)</span><span class="p">.</span><span class="nf">Scan</span><span class="p">(</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">ID</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">CreatedAt</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span>
+        <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1">// Handle any errors. If there was no matching movie found, Scan() will return 
+</span><span class="c1"></span>    <span class="c1">// a sql.ErrNoRows error. We check for this and return our custom ErrRecordNotFound 
+</span><span class="c1"></span>    <span class="c1">// error instead. 
+</span><span class="c1"></span>    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">ErrNoRows</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Otherwise, return a pointer to the Movie struct.
+</span><span class="c1"></span>    <span class="k">return</span> <span class="o">&amp;</span><span class="nx">movie</span><span class="p">,</span> <span class="kc">nil</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>امیدواریم کد بالا واضح و آشنا باشد &mdash; این دقیقاً همان الگویی است که در <em>Let's Go</em> به‌طور مفصل در مورد آن بحث کردیم.</p>
+
+<p>نکته قابل توجه این است که باید از آداپتور <code>pq.Array()</code> دوباره هنگام اسکن داده‌های ژانر از آرایه <code>text[]</code> PostgreSQL استفاده کنیم. اگر از این آداپتور استفاده نکنیم، خطای زیر را در زمان اجرا دریافت خواهیم کرد:</p>
+
+<figure class="code bash">
+<pre>sql: Scan error on column index 5, name &#34;genres&#34;: unsupported Scan, storing driver.Value type []uint8 into type *[]string</pre>
+</figure>
+
+<h3 id="updating-the-api-handler">به‌روزرسانی هندلر API</h3>
+
+<p>خب، کار بعدی که باید انجام دهیم به‌روزرسانی <code>showMovieHandler</code> است تا متد <code>Get()</code> که ایجاد کردیم را فراخوانی کند. هندلر باید بررسی کند که آیا <code>Get()</code> خطای <code>ErrRecordNotFound</code> برمی‌گرداند یا خیر &mdash; و اگر چنین است، پاسخ <code>404 Not Found</code> به کلاینت ارسال شود. در غیر این صورت، می‌توانیم ساختار <code>Movie</code> برگشتی را در یک پاسخ JSON رندر کنیم.</p>
+
+<p>به صورت زیر:</p>
+
+<figure class="code go">
+<figcaption>فایل: cmd/api/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">main</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;errors&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;fmt&#34;</span>
+    <span class="s">&#34;net/http&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/data&#34;</span>
+    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">app</span> <span class="o">*</span><span class="nx">application</span><span class="p">)</span> <span class="nf">showMovieHandler</span><span class="p">(</span><span class="nx">w</span> <span class="nx">http</span><span class="p">.</span><span class="nx">ResponseWriter</span><span class="p">,</span> <span class="nx">r</span> <span class="o">*</span><span class="nx">http</span><span class="p">.</span><span class="nx">Request</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nx">id</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">readIDParam</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Call the Get() method to fetch the data for a specific movie. We also need to 
+</span><span class="c1"></span>    <span class="c1">// use the errors.Is() function to check if it returns a data.ErrRecordNotFound
+</span><span class="c1"></span>    <span class="c1">// error, in which case we send a 404 Not Found response to the client.
+</span><span class="c1"></span>    <span class="nx">movie</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">app</span><span class="p">.</span><span class="nx">models</span><span class="p">.</span><span class="nx">Movies</span><span class="p">.</span><span class="nf">Get</span><span class="p">(</span><span class="nx">id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">data</span><span class="p">.</span><span class="nx">ErrRecordNotFound</span><span class="p">)</span><span class="p">:</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">notFoundResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">)</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">return</span>
+    <span class="p">}</span>
+
+    <span class="nx">err</span> <span class="p">=</span> <span class="nx">app</span><span class="p">.</span><span class="nf">writeJSON</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">http</span><span class="p">.</span><span class="nx">StatusOK</span><span class="p">,</span> <span class="nx">envelope</span><span class="p">{</span><span class="s">&#34;movie&#34;</span><span class="p">:</span> <span class="nx">movie</span><span class="p">}</span><span class="p">,</span> <span class="kc">nil</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="nx">app</span><span class="p">.</span><span class="nf">serverErrorResponse</span><span class="p">(</span><span class="nx">w</span><span class="p">,</span> <span class="nx">r</span><span class="p">,</span> <span class="nx">err</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>عالی! این همه به لطف ساختار و توابع کمکی که از قبل ایجاد کرده‌ایم، ساده و مختصر است.</p>
+
+<p>می‌توانید با ریستارت کردن API و جستجوی یک فیلم که قبلاً در پایگاه داده ایجاد کرده‌اید، این کد را امتحان کنید. به عنوان مثال:</p>
+
+<figure class="code bash">
+<pre>$ curl -i localhost:4000/v1/movies/2
+<samp>HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Wed, 07 Apr 2021 19:37:12 GMT
+Content-Length: 161
+
+{
+    &#34;movie&#34;: {
+        &#34;id&#34;: 2,
+        &#34;title&#34;: &#34;Black Panther&#34;,
+        &#34;year&#34;: 2018,
+        &#34;runtime&#34;: &#34;134 mins&#34;,
+        &#34;genres&#34;: [
+            &#34;action&#34;,
+            &#34;adventure&#34;
+        ],
+        &#34;version&#34;: 1
+    }
+}</samp></pre>
+</figure>
+
+<p>به همین ترتیب، می‌توانید درخواستی با شناسه فیلمی بفرستید که هنوز در پایگاه داده وجود ندارد (اما در غیر این صورت معتبر است). در آن سناریو باید پاسخ <code>404 Not Found</code> مانند زیر دریافت کنید:</p>
+
+<figure class="code bash">
+<pre>$ curl -i localhost:4000/v1/movies/42
+<samp>HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Wed, 07 Apr 2021 19:37:58 GMT
+Content-Length: 58
+
+{
+    &#34;error&#34;: &#34;the requested resource could not be found&#34;
+}</samp></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="why-not-use-an-unsigned-integer-for-the-movie-id">چرا از عدد صحیح بدون علامت برای شناسه فیلم استفاده نمی‌کنیم؟</h4>
+
+<p>در ابتدای متد <code>Get()</code> کد زیر را داریم که بررسی می‌کند آیا پارامتر <code>id</code> فیلم کمتر از ۱ است یا خیر:</p>
+
+<figure class="code go">
+<pre><span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Get</span><span class="p">(</span><span class="nx">id</span> <span class="kt">int64</span><span class="p">)</span> <span class="p">(</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">id</span> <span class="p">&lt;</span> <span class="mi">1</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="o">...</span>
+<span class="p">}</span></pre>
+</figure>
+
+<p>شاید این سؤال در ذهن شما ایجاد شده باشد: <em>اگر شناسه فیلم هرگز منفی نیست، چرا از نوع <a href="https://golang.org/pkg/builtin/#uint64"><code>uint64</code></a> بدون علامت به جای <code>int64</code> برای ذخیره شناسه در کد Go خود استفاده نمی‌کنیم؟</em></p>
+
+<p>دو دلیل برای این وجود دارد.</p>
+
+<p>دلیل اول این است که <em>PostgreSQL عدد صحیح بدون علامت ندارد</em>. به‌طور کلی هوشمندانه است که انواع عدد صحیح Go و پایگاه داده خود را هماهنگ کنید تا از overflow یا سایر مشکلات سازگاری جلوگیری شود، بنابراین از آنجایی که PostgreSQL عدد صحیح بدون علامت ندارد، این بدان معناست که باید از استفاده انواع <code>uint*</code> در کد Go خود برای هر مقداری که از/به PostgreSQL می‌خوانیم/می‌نویسیم خودداری کنیم.</p>
+
+<p>بهتر است انواع عدد صحیح را بر اساس جدول زیر هماهنگ کنید:</p>
+
+<table>
+<thead>
+<tr>
+<th>نوع PostgreSQL</th>
+<th>نوع Go</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td><code>smallint</code>, <code>smallserial</code></td>
+<td><code>int16</code> (-32768 to 32767)</td>
+</tr>
+
+<tr>
+<td><code>integer</code>, <code>serial</code></td>
+<td><code>int32</code> (-2147483648 to 2147483647)</td>
+</tr>
+
+<tr>
+<td><code>bigint</code>, <code>bigserial</code></td>
+<td><code>int64</code> (-9223372036854775808 to 9223372036854775807)</td>
+</tr>
+</tbody>
+</table>
+<p>دلیل دیگری نیز وجود دارد که ظریف‌تر است. پکیج <code>database/sql</code> Go <a href="https://github.com/golang/go/blob/4ce0a7cea6805277c3bfecbaab2170e5c2543cba/src/database/sql/driver/types.go#L270">واقعاً از</a> مقادیر عدد صحیح بزرگتر از 9223372036854775807 (حداکثر مقدار برای <code>int64</code>) پشتیبانی نمی‌کند. ممکن است مقدار <code>uint64</code> از این بزرگتر باشد که در نتیجه باعث ایجاد خطای زمان اجرا مشابه زیر توسط Go می‌شود:</p>
+
+<figure class="code bash">
+<pre>sql: converting argument $1 type: uint64 values with high bit set are not supported</pre>
+</figure>
+
+<p>با استفاده از <code>int64</code> در کد Go خود، خطر بروز این خطا را از بین می‌بریم.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="07.02-creating-a-new-movie.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="07.04-updating-a-movie.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "07.02-creating-a-new-movie.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "07.04-updating-a-movie.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>

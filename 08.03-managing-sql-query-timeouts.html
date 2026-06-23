@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+	<head>
+		<meta charset="utf-8">
+		<meta http-equiv="x-ua-compatible" content="ie=edge">
+		<meta name="author" content="Alex Edwards">
+		<meta name="copyright" content="Copyright Alex Edwards 2025">
+		<title>مدیریت تایم‌اوت پرس‌وجوهای SQL &mdash; Let's Go Further</title>
+		<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+		<link rel="stylesheet" type="text/css" href="assets/css/main.css">
+		<link rel="icon" type="image/x-icon" href="assets/img/favicon.ico">
+	</head>
+	<body>
+		<header>
+			<div class="wrapper">
+				<div>
+					
+					
+						<a href="00.00-front-matter.html">Let's Go Further</a> <span class="crumbs">&rsaquo; <a href="08.00-advanced-crud-operations.html">عملیات CRUD پیشرفته</a> &rsaquo; مدیریت تایم‌اوت پرس‌وجوهای SQL</span>
+					
+				</div>
+				<div>
+					&lsaquo; <a href="08.02-optimistic-concurrency-control.html">قبلی</a>
+					&middot; <a href="00.01-contents.html">فهرست مطالب</a> &middot;
+					<a href="09.00-filtering-sorting-and-pagination.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</header>
+		<main class="wrapper text">
+			<div class="chapter">فصل 8.3.</div>
+			<h2 id="managing-sql-query-timeouts">مدیریت تایم‌اوت پرس‌وجوهای SQL</h2>
+
+<p>تا اینجا در کدمان از متدهای <code>Exec()</code> و <code>QueryRow()</code> زبان Go برای اجرای پرس‌وجوهای SQL استفاده کرده‌ایم. اما Go نسخه‌های <em>آگاه از context</em> این دو متد را نیز ارائه می‌دهد: <a href="https://golang.org/pkg/database/sql/#DB.ExecContext"><code>ExecContext()</code></a> و <a href="https://golang.org/pkg/database/sql/#DB.QueryRowContext"><code>QueryRowContext()</code></a>. این نسخه‌ها یک نمونه <a href="https://golang.org/pkg/context/#Context"><code>context.Context</code></a> را به عنوان پارامتر اول دریافت می‌کنند که می‌توانید از آن برای <em>خاتمه دادن به پرس‌وهای در حال اجرای دیتابیس</em> استفاده کنید.</p>
+
+<p>این قابلیت زمانی مفید است که <em>یک پرس‌وجوی SQL بیش از حد انتظار طول بکشد</em>. وقتی این اتفاق می‌افتد، نشان‌دهنده یک مشکل است &mdash; چه در آن پرس‌وجوی خاص و چه در دیتابیس یا برنامه شما به طور کلی &mdash; و احتمالاً می‌خواهید پرس‌وجو را لغو کنید (برای آزادسازی منابع)، یک خطا برای بررسی بیشتر ثبت کنید، و یک پاسخ <code>500 Internal Server Error</code> به کلاینت برگردانید.</p>
+
+<p>در این فصل، برنامه خود را به گونه‌ای به‌روزرسانی خواهیم کرد که دقیقاً همین کار را انجام دهد.</p>
+
+<h3 id="mimicking-a-long-running-query">شبیه‌سازی یک پرس‌وجوی طولانی در حال اجرا</h3>
+
+<p>برای کمک به نشان دادن نحوه عملکرد این مکانیزم، بیایید با تغییر متد <code>Get()</code> مدل دیتابیس خود شروع کنیم تا یک پرس‌وجوی طولانی در حال اجرا را شبیه‌سازی کند. به طور خاص، پرس‌وجوی SQL خود را به گونه‌ای به‌روزرسانی خواهیم کرد که مقدار <code>pg_sleep(8)</code> را برگرداند، که باعث می‌شود PostgreSQL به مدت 8 ثانیه قبل از بازگرداندن نتیجه خود در حالت خواب باشد.</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Get</span><span class="p">(</span><span class="nx">id</span> <span class="kt">int64</span><span class="p">)</span> <span class="p">(</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">id</span> <span class="p">&lt;</span> <span class="mi">1</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Update the query to return pg_sleep(8) as the first value.
+</span><span class="c1"></span>    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        SELECT pg_sleep(8), id, created_at, title, year, runtime, genres, version
+</span><span class="s">        FROM movies
+</span><span class="s">        WHERE id = $1</span><span class="s">`</span>
+
+    <span class="kd">var</span> <span class="nx">movie</span> <span class="nx">Movie</span>
+
+    <span class="c1">// Importantly, update the Scan() arguments so that the pg_sleep(8) return value 
+</span><span class="c1"></span>    <span class="c1">// is scanned into a []byte slice.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryRow</span><span class="p">(</span><span class="nx">query</span><span class="p">,</span> <span class="nx">id</span><span class="p">)</span><span class="p">.</span><span class="nf">Scan</span><span class="p">(</span>
+        <span class="o">&amp;</span><span class="p">[</span><span class="p">]</span><span class="kt">byte</span><span class="p">{</span><span class="p">}</span><span class="p">,</span> <span class="c1">// Add this line.
+</span><span class="c1"></span>        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">ID</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">CreatedAt</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span>
+        <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">ErrNoRows</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="o">&amp;</span><span class="nx">movie</span><span class="p">,</span> <span class="kc">nil</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>اگر برنامه را مجدداً راه‌اندازی کنید و درخواستی به اندپوینت <code>GET /v1/movies/:id</code> بفرستید، باید ببینید که درخواست به مدت 8 ثانیه متوقف می‌شود تا سرانجام یک پاسخ موفق با اطلاعات فیلم دریافت کنید. چیزی شبیه به این:</p>
+
+<figure class="code bash">
+<pre>$ curl -w &#39;\nTime: %{time_total}s \n&#39; localhost:4000/v1/movies/1
+<samp>{
+    &#34;movie&#34;: {
+        &#34;id&#34;: 1,
+        &#34;title&#34;: &#34;Moana&#34;,
+        &#34;year&#34;: 2015,
+        &#34;runtime&#34;: &#34;107 mins&#34;,
+        &#34;genres&#34;: [
+            &#34;animation&#34;,
+            &#34;adventure&#34;
+        ],
+        &#34;version&#34;: 1
+    }
+}
+
+Time: 8.013534s</samp></pre>
+</figure>
+
+<aside class="hint"><p>
+<strong>نکته:</strong> در دستور <code>curl</code> بالا از پرچم <code>-w</code> استفاده می‌کنیم تا پاسخ HTTP را با زمان کل صرف‌شده برای تکمیل دستور حاشیه‌نویسی کنیم. برای جزئیات بیشتر در مورد اطلاعات زمان‌بندی موجود در curl لطفاً <a href="https://blog.josephscott.org/2011/10/14/timing-details-with-curl/">این پست وبلاگی عالی</a> را ببینید.<br />
+</p></aside>
+
+<h3 id="adding-a-query-timeout">افزودن یک تایم‌اوت به پرس‌وجو</h3>
+
+<p>اکنون که کدی داریم که یک پرس‌وجوی طولانی در حال اجرا را شبیه‌سازی می‌کند، بیایید یک تایم‌اوت اعمال کنیم تا پرس‌وجوی SQL در صورتی که ظرف 3 ثانیه تکمیل نشود به طور خودکار لغو شود.</p>
+
+<p>برای این کار باید:</p>
+
+<ol>
+<li>از تابع <a href="https://golang.org/pkg/context/#WithTimeout"><code>context.WithTimeout()</code></a> برای ایجاد یک نمونه <code>context.Context</code> با مهلت تایم‌اوت 3 ثانیه‌ای استفاده کنیم.</li>
+<li>پرس‌وجوی SQL را با استفاده از متد <code>QueryRowContext()</code> اجرا کنیم و نمونه <code>context.Context</code> را به عنوان پارامتر ارسال کنیم.</li>
+</ol>
+
+<p>من این کار را نشان خواهم داد:</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="kn">import</span> <span class="p">(</span>
+    <span class="s">&#34;context&#34;</span> <span class="c1">// New import
+</span><span class="c1"></span>    <span class="s">&#34;database/sql&#34;</span>
+    <span class="s">&#34;errors&#34;</span>
+    <span class="s">&#34;time&#34;</span>
+
+    <span class="s">&#34;greenlight.alexedwards.net/internal/validator&#34;</span>
+
+    <span class="s">&#34;github.com/lib/pq&#34;</span>
+<span class="p">)</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Get</span><span class="p">(</span><span class="nx">id</span> <span class="kt">int64</span><span class="p">)</span> <span class="p">(</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">id</span> <span class="p">&lt;</span> <span class="mi">1</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        SELECT pg_sleep(8), id, created_at, title, year, runtime, genres, version
+</span><span class="s">        FROM movies
+</span><span class="s">        WHERE id = $1</span><span class="s">`</span>
+
+    <span class="kd">var</span> <span class="nx">movie</span> <span class="nx">Movie</span>
+
+    <span class="c1">// Use the context.WithTimeout() function to create a context.Context which carries a
+</span><span class="c1"></span>    <span class="c1">// 3-second timeout deadline. Note that we&#39;re using the empty context.Background() 
+</span><span class="c1"></span>    <span class="c1">// as the &#39;parent&#39; context.
+</span><span class="c1"></span>    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">3</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+
+    <span class="c1">// Importantly, use defer to make sure that we cancel the context before the Get()
+</span><span class="c1"></span>    <span class="c1">// method returns.
+</span><span class="c1"></span>    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Use the QueryRowContext() method to execute the query, passing in the context 
+</span><span class="c1"></span>    <span class="c1">// (including the deadline) as the first argument. 
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryRowContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">id</span><span class="p">)</span><span class="p">.</span><span class="nf">Scan</span><span class="p">(</span>
+        <span class="o">&amp;</span><span class="p">[</span><span class="p">]</span><span class="kt">byte</span><span class="p">{</span><span class="p">}</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">ID</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">CreatedAt</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span>
+        <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">ErrNoRows</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="o">&amp;</span><span class="nx">movie</span><span class="p">,</span> <span class="kc">nil</span>
+<span class="p">}</span>
+
+<span class="o">...</span></pre>
+</figure>
+
+<p>چند نکته در کد بالا وجود دارد که می‌خواهم بر آن‌ها تأکید کنم و توضیح دهم:</p>
+
+<ul>
+<li><p>خط <code>defer cancel()</code> ضروری است زیرا تضمین می‌کند که منابع مرتبط با context ما همیشه قبل از بازگشت متد <code>Get()</code> آزاد شوند و از نشت حافظه جلوگیری شود. بدون آن، منابع تا زمانی که تایم‌اوت 3 ثانیه‌ای فرا برسد یا context والد (که در این مثال خاص <a href="https://golang.org/pkg/context/#Background"><code>context.Background()</code></a> است) لغو شود، آزاد نخواهند شد.</p></li>
+
+<li><p>شمارش معکوس تایم‌اوت از لحظه‌ای آغاز می‌شود که context با <code>context.WithTimeout()</code> ایجاد می‌شود. هر زمان صرف‌شده برای اجرای کد بین ایجاد context و فراخوانی <code>QueryRowContext()</code> به عنوان تایم‌اوت محاسبه خواهد شد.</p></li>
+</ul>
+
+<p>خوب، بیایید این را امتحان کنیم.</p>
+
+<p>اگر برنامه را مجدداً راه‌اندازی کنید و درخواست دیگری به اندپوینت <code>GET /v1/movies/:id</code> بفرستید، باید بعد از یک تأخیر 3 ثانیه‌ای پاسخ خطایی شبیه به این دریافت کنید:</p>
+
+<figure class="code bash">
+<pre>$ curl -w &#39;\nTime: %{time_total}s \n&#39; localhost:4000/v1/movies/1
+<samp>{
+    &#34;error&#34;: &#34;the server encountered a problem and could not process your request&#34;
+}
+
+Time: 3.025179s</samp></pre>
+</figure>
+
+<p>اگر به پنجره ترمینالی که برنامه را اجرا می‌کند بازگردید، باید یک خط گزارش با پیام خطای <code>&quot;pq: canceling statement due to user request&quot;</code> نیز ببینید. چیزی شبیه به این:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development
+time=2023-09-10T10:59:16.722+02:00 level=ERROR msg=&#34;pq: canceling statement due to user request&#34;</samp></pre>
+</figure>
+
+<p>در ابتدا عبارت این پیام خطا ممکن است عجیب به نظر برسد&hellip; تا زمانی که بیاموزید پیام &ldquo;canceling statement due to user request&rdquo; از PostgreSQL می‌آید. از این منطق معقول است: <em>برنامه ما</em> کاربر PostgreSQL است و ما عمداً پرس‌وجو را بعد از 3 ثانیه لغو می‌کنیم.</p>
+
+<p>پس این واقعاً خیلی خوب است و اوضاع دقیقاً طوری که انتظار داریم پیش می‌رود.</p>
+
+<p>بعد از 3 ثانیه، تایم‌اوت context فرا می‌رسد و درایور دیتابیس <code>pq</code> ما یک سیگنال لغو به PostgreSQL ارسال می‌کند<sup>†</sup>. PostgreSQL سپس پرس‌وجوی در حال اجرا را خاتمه می‌دهد، منابع مربوطه آزاد می‌شوند و پیام خطایی که در بالا می‌بینیم را برمی‌گرداند. سپس یک پاسخ <code>500 Internal Server Error</code> به کلاینت ارسال می‌شود و خطا ثبت می‌گردد تا بدانیم مشکلی پیش آمده است.</p>
+
+<aside class="hint"><p>
+† به طور دقیق‌تر، context ما (همان با تایم‌اوت 3 ثانیه‌ای) یک کانال <code>Done</code> دارد و وقتی تایم‌اوت فرا می‌رسد کانال <code>Done</code> بسته خواهد شد. در حین اجرای پرس‌وجوی SQL، درایور دیتابیس <code>pq</code> ما نیز یک گوروتین پس‌زمینه اجرا می‌کند که روی این کانال <code>Done</code> گوش می‌دهد. اگر کانال بسته شود، <code>pq</code> یک سیگنال لغو به PostgreSQL ارسال می‌کند. PostgreSQL پرس‌وجو را خاتمه می‌دهد و سپس پیام خطایی را که در بالا می‌بینیم به عنوان پاسخ به گوروتین اصلی <code>pq</code> ارسال می‌کند. آن پیام خطا سپس به متد <code>Get()</code> مدل دیتابیس ما بازگردانده می‌شود.
+</p></aside>
+
+<h3 id="timeouts-outside-of-postgresql">تایم‌اوت‌های خارج از PostgreSQL</h3>
+
+<p>نکته مهم دیگری که باید به آن اشاره کنم این است: <em>ممکن است مهلت تایم‌اوت حتی قبل از شروع پرس‌وجوی PostgreSQL فرا برسد</em>.</p>
+
+<p>شاید به یاد بیاورید که قبلاً در کتاب pool اتصال <code>sql.DB</code> خود را به گونه‌ای پیکربندی کردیم که حداکثر 25 اتصال باز مجاز باشد. اگر همه این اتصالات در حال استفاده باشند، هر پرس‌وجوی اضافی توسط <code>sql.DB</code> &lsquo;در صف قرار می‌گیرد&rsquo; تا یک اتصال در دسترس شود. در این سناریو &mdash; یا هر سناریو دیگری که باعث تأخیر شود &mdash; ممکن است مهلت تایم‌اوت حتی قبل از در دسترس شدن یک اتصال دیتابیس آزاد فرا برسد. اگر این اتفاق بیفتد، <code>QueryRowContext()</code> خطای <a href="https://golang.org/pkg/context/#pkg-variables"><code>context.DeadlineExceeded</code></a> را برمی‌گرداند.</p>
+
+<p>در واقع، ما می‌توانیم این را در برنامه خود با تنظیم حداکثر اتصالات باز به 1 و ارسال دو درخواست همزمان به اندپوینت خود نشان دهیم. بیایید API را با پرچم <code>-db-max-open-conns=1</code> مجدداً راه‌اندازی کنیم، چیزی شبیه به این:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api -db-max-open-conns=1
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development</samp></pre>
+</figure>
+
+<p>سپس در پنجره ترمینال دیگر دو درخواست همزمان به اندپوینت <code>GET /v1/movies/:id</code> بفرستید. در لحظه‌ای که تایم‌اوت 3 ثانیه‌ای فرا می‌رسد، باید یک پرس‌وجوی SQL در حال اجرا و دیگری همچنان &lsquo;در صف&rsquo; در pool اتصال <code>sql.DB</code> داشته باشیم. باید دو پاسخ خطا دریافت کنید که شبیه به این باشند:</p>
+
+<figure class="code bash">
+<pre>$ curl localhost:4000/v1/movies/1 &amp; curl localhost:4000/v1/movies/1 &amp;
+<samp>[1] 33221
+[2] 33222</samp>
+$ <samp>{
+    &#34;error&#34;: &#34;the server encountered a problem and could not process your request&#34;
+}
+{
+    &#34;error&#34;: &#34;the server encountered a problem and could not process your request&#34;
+}</samp></pre>
+</figure>
+
+<p>وقتی اکنون به ترمینال اصلی خود بازگردید، باید دو پیام خطای متفاوت ببینید:</p>
+
+<figure class="code bash">
+<pre>$ go run ./cmd/api -db-max-open-conns=1
+<samp>time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;database connection pool established&#34;
+time=2023-09-10T10:59:13.722+02:00 level=INFO msg=&#34;starting server&#34; addr=:4000 env=development
+time=2023-09-10T10:59:27.722+02:00 level=ERROR msg=&#34;context deadline exceeded&#34;
+time=2023-09-10T10:59:27.722+02:00 level=ERROR msg=&#34;pq: canceling statement due to user request&#34; addr=:4000 env=development</samp></pre>
+</figure>
+
+<p>در اینجا پیام خطای <code>pq: canceling statement due to user request</code> مربوط به خاتمه یافتن پرس‌وجوی SQL در حال اجرا است، در حالی که پیام <code>context deadline exceeded</code> مربوط به لغو شدن پرس‌وجوی SQL در صف <em>حتی قبل از در دسترس شدن یک اتصال دیتابیس آزاد</em> است.</p>
+
+<p>به همین ترتیب، امکان فرا رسیدن مهلت تایم‌اوت بعداً هنگام پردازش داده‌های بازگشتی از پرس‌وجو با <code>Scan()</code> نیز وجود دارد. اگر این اتفاق بیفتد، <code>Scan()</code> نیز خطای <code>context.DeadlineExceeded</code> را برمی‌گرداند.</p>
+
+<h3 id="updating-our-database-model">به‌روزرسانی مدل دیتابیس ما</h3>
+
+<p>بیایید به سرعت مدل دیتابیس خود را برای استفاده از مهلت تایم‌اوت 3 ثانیه‌ای برای همه عملیات‌هایمان به‌روزرسانی کنیم. در همین حین، بخش <code>pg_sleep(8)</code> را از متد <code>Get()</code> خود نیز حذف خواهیم کرد.</p>
+
+<figure class="code go">
+<figcaption>فایل: internal/data/movies.go</figcaption>
+<pre><span class="kn">package</span> <span class="nx">data</span>
+
+<span class="o">...</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Insert</span><span class="p">(</span><span class="nx">movie</span> <span class="o">*</span><span class="nx">Movie</span><span class="p">)</span> <span class="kt">error</span> <span class="p">{</span>
+    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        INSERT INTO movies (title, year, runtime, genres) 
+</span><span class="s">        VALUES ($1, $2, $3, $4)
+</span><span class="s">        RETURNING id, created_at, version</span><span class="s">`</span>
+
+    <span class="nx">args</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="nx">any</span><span class="p">{</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span> <span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span> <span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span> <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">}</span>
+
+    <span class="c1">// Create a context with a 3-second timeout.
+</span><span class="c1"></span>    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">3</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Use QueryRowContext() and pass the context as the first argument.
+</span><span class="c1"></span>    <span class="k">return</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryRowContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">args</span><span class="o">...</span><span class="p">)</span><span class="p">.</span><span class="nf">Scan</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">ID</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">CreatedAt</span><span class="p">,</span> <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Get</span><span class="p">(</span><span class="nx">id</span> <span class="kt">int64</span><span class="p">)</span> <span class="p">(</span><span class="o">*</span><span class="nx">Movie</span><span class="p">,</span> <span class="kt">error</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">id</span> <span class="p">&lt;</span> <span class="mi">1</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Remove the pg_sleep(8) clause.
+</span><span class="c1"></span>    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        SELECT id, created_at, title, year, runtime, genres, version
+</span><span class="s">        FROM movies
+</span><span class="s">        WHERE id = $1</span><span class="s">`</span>
+
+    <span class="kd">var</span> <span class="nx">movie</span> <span class="nx">Movie</span>
+
+    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">3</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Remove &amp;[]byte{} from the first Scan() destination.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryRowContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">id</span><span class="p">)</span><span class="p">.</span><span class="nf">Scan</span><span class="p">(</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">ID</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">CreatedAt</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span>
+        <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span>
+        <span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">ErrNoRows</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">ErrRecordNotFound</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="kc">nil</span><span class="p">,</span> <span class="nx">err</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="o">&amp;</span><span class="nx">movie</span><span class="p">,</span> <span class="kc">nil</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Update</span><span class="p">(</span><span class="nx">movie</span> <span class="o">*</span><span class="nx">Movie</span><span class="p">)</span> <span class="kt">error</span> <span class="p">{</span>
+    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        UPDATE movies 
+</span><span class="s">        SET title = $1, year = $2, runtime = $3, genres = $4, version = version + 1
+</span><span class="s">        WHERE id = $5 AND version = $6
+</span><span class="s">        RETURNING version</span><span class="s">`</span>
+
+    <span class="nx">args</span> <span class="o">:=</span> <span class="p">[</span><span class="p">]</span><span class="nx">any</span><span class="p">{</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Title</span><span class="p">,</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Year</span><span class="p">,</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Runtime</span><span class="p">,</span>
+        <span class="nx">pq</span><span class="p">.</span><span class="nf">Array</span><span class="p">(</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Genres</span><span class="p">)</span><span class="p">,</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">ID</span><span class="p">,</span>
+        <span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">,</span>
+    <span class="p">}</span>
+
+    <span class="c1">// Create a context with a 3-second timeout.
+</span><span class="c1"></span>    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">3</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Use QueryRowContext() and pass the context as the first argument.
+</span><span class="c1"></span>    <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">QueryRowContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">args</span><span class="o">...</span><span class="p">)</span><span class="p">.</span><span class="nf">Scan</span><span class="p">(</span><span class="o">&amp;</span><span class="nx">movie</span><span class="p">.</span><span class="nx">Version</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">switch</span> <span class="p">{</span>
+        <span class="k">case</span> <span class="nx">errors</span><span class="p">.</span><span class="nf">Is</span><span class="p">(</span><span class="nx">err</span><span class="p">,</span> <span class="nx">sql</span><span class="p">.</span><span class="nx">ErrNoRows</span><span class="p">)</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nx">ErrEditConflict</span>
+        <span class="k">default</span><span class="p">:</span>
+            <span class="k">return</span> <span class="nx">err</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="kc">nil</span>
+<span class="p">}</span>
+
+<span class="kd">func</span> <span class="p">(</span><span class="nx">m</span> <span class="nx">MovieModel</span><span class="p">)</span> <span class="nf">Delete</span><span class="p">(</span><span class="nx">id</span> <span class="kt">int64</span><span class="p">)</span> <span class="kt">error</span> <span class="p">{</span>
+    <span class="k">if</span> <span class="nx">id</span> <span class="p">&lt;</span> <span class="mi">1</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="nx">query</span> <span class="o">:=</span> <span class="s">`</span><span class="s">
+</span><span class="s">        DELETE FROM movies
+</span><span class="s">        WHERE id = $1</span><span class="s">`</span>
+
+    <span class="c1">// Create a context with a 3-second timeout.
+</span><span class="c1"></span>    <span class="nx">ctx</span><span class="p">,</span> <span class="nx">cancel</span> <span class="o">:=</span> <span class="nx">context</span><span class="p">.</span><span class="nf">WithTimeout</span><span class="p">(</span><span class="nx">context</span><span class="p">.</span><span class="nf">Background</span><span class="p">(</span><span class="p">)</span><span class="p">,</span> <span class="mi">3</span><span class="o">*</span><span class="nx">time</span><span class="p">.</span><span class="nx">Second</span><span class="p">)</span>
+    <span class="k">defer</span> <span class="nf">cancel</span><span class="p">(</span><span class="p">)</span>
+
+    <span class="c1">// Use ExecContext() and pass the context as the first argument.
+</span><span class="c1"></span>    <span class="nx">result</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">m</span><span class="p">.</span><span class="nx">DB</span><span class="p">.</span><span class="nf">ExecContext</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span> <span class="nx">query</span><span class="p">,</span> <span class="nx">id</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">err</span>
+    <span class="p">}</span>
+
+    <span class="nx">rowsAffected</span><span class="p">,</span> <span class="nx">err</span> <span class="o">:=</span> <span class="nx">result</span><span class="p">.</span><span class="nf">RowsAffected</span><span class="p">(</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nx">err</span> <span class="o">!=</span> <span class="kc">nil</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">err</span>
+    <span class="p">}</span>
+
+    <span class="k">if</span> <span class="nx">rowsAffected</span> <span class="o">==</span> <span class="mi">0</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nx">ErrRecordNotFound</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="kc">nil</span>
+<span class="p">}</span></pre>
+</figure>
+
+<hr />
+
+<h3 id="additional-information">اطلاعات تکمیلی</h3>
+
+<h4 id="using-the-request-context">استفاده از context درخواست</h4>
+
+<p>به عنوان جایگزینی برای الگویی که در کد بالا استفاده کرده‌ایم، می‌توانیم در <em>هندلرهای خود</em> با استفاده از <em>context درخواست</em> به عنوان والد، یک context با تایم‌اوت ایجاد کنیم &mdash; و سپس آن را به مدل دیتابیس خود منتقل کنیم.</p>
+
+<p>اما &mdash; و اما بزرگی است &mdash; انجام این کار پیچیدگی رفتاری زیادی معرفی می‌کند و برای <em>بیشتر</em> برنامه‌ها مزایای آن به اندازه کافی بزرگ نیستند که این مبادله ارزشمند باشد.</p>
+
+<p>جزئیات پشت این موضوع بسیار جالب هستند، اما همچنین نسبتاً پیچیده و دشوارند. به همین دلیل من آن را بیشتر در <a href="21.06-request-context-timeouts.html">این پیوست</a> بحث کرده‌ام.</p>
+
+		</main>
+		<footer>
+			<div class="wrapper">
+				<div>
+					&lsaquo; <a href="08.02-optimistic-concurrency-control.html">قبلی</a>
+				</div>
+				<div>
+					<a href="00.01-contents.html">فهرست مطالب</a>
+				</div>
+				<div>
+					<a href="09.00-filtering-sorting-and-pagination.html">بعدی</a> &rsaquo;
+				</div>
+			</div>
+		</footer>
+		<script>
+			document.onkeydown = function(evt) {
+				evt = evt || window.event;
+				switch (evt.keyCode) {
+					
+					case 37:
+						window.location.href = "08.02-optimistic-concurrency-control.html";
+						break;
+						
+					
+					case 39:
+						window.location.href = "09.00-filtering-sorting-and-pagination.html";
+						break;
+						
+				}
+			};
+		</script>
+	</body>
+</html>
